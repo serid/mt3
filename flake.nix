@@ -15,7 +15,7 @@
   outputs = { self, nixpkgs }:
     let pkgs = nixpkgs.legacyPackages.x86_64-linux; in {
       devShell.x86_64-linux = pkgs.mkShell {
-        packages = [ pkgs.clang pkgs.jdk];
+        packages = [ pkgs.clang pkgs.rustup pkgs.jdk];
         # use jetbrains jdk
         #packages = [ pkgs.clang ];
 
