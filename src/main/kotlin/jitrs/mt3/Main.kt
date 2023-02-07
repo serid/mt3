@@ -10,11 +10,19 @@ fun main(args: Array<String>) {
     // Learn more about running applications: https://www.jetbrains.com/help/idea/running-applications.html.
     println("Program arguments: ${args.joinToString()}")
 
-    val tokens = tokenize("(fun main () (+ 1 2))").asSequence().priceyToArray()
-    val sexpr = parseSExprs(PeekableIterator( tokens.iterator()))
-    val program = programfromSExprs(sexpr)
+    val src = """(fun main ()
+                   (print "Doge")
+                   (print (+ 1 2))
+                 )"""
+    val tokens = tokenize(src).asSequence().priceyToArray()
+    val sexprs = parseSExprs(PeekableIterator( tokens.iterator()))
+    val program = programfromSExprs(sexprs)
+    val lir = Lowering().toLlvm(program)
 
     println(tokens.joinToString())
-    println(sexpr.joinToString())
+    println(sexprs.joinToString())
     println(program)
+    println(lir)
+
+    link()
 }
