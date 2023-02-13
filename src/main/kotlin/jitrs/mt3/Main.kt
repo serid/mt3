@@ -12,13 +12,13 @@ fun main(args: Array<String>) {
     println("Program arguments: ${args.joinToString()}")
 
     val src = """(fun main ()
-                   (print "Doge")
+                   (print "Doge ")
                    (print (+ 1 2))
                  )"""
     val tokens = tokenize(src).asSequence().priceyToArray()
     val sexprs = parseSExprs(PeekableIterator( tokens.iterator()))
     val program = programfromSExprs(sexprs)
-    val lir = Lowering().toLlvm(program)
+    val lir = Lowering("lemod").toLlvm(program)
 
     println(tokens.joinToString())
     println(sexprs.joinToString())

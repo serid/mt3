@@ -41,6 +41,10 @@ public:
 std::vector<GCObject*> gc_roots;
 
 // MT3 modules should call this function during init to add their global variables as gc roots
-extern "C" void mt3_add_gc_root(GCObject* root) {
+void mt3_add_gc_root_cxx(GCObject* root) {
     gc_roots.push_back(root);
+}
+
+extern "C" void mt3_add_gc_root(void* root) {
+    mt3_add_gc_root_cxx(reinterpret_cast<GCObject*>(root));
 }

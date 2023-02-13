@@ -8,6 +8,26 @@ fun tokenize(s: String): Iterator<Token> = iterator {
     while (true) {
         while (i < s.length && s[i].isWhitespace()) i++
 
+        while (true) {
+            if (i >= s.length)
+                break
+
+            if (s[i].isWhitespace()) {
+                i++
+                continue
+            }
+
+            // Skip comments
+            if (i + 1 < s.length && s[i] == '-' && s[i + 1] == '-') {
+                i += 2
+                while (i < s.length && s[i] != '\n')
+                    i++
+                continue
+            }
+
+            break
+        }
+
         if (i >= s.length) break
 
         when {
@@ -32,6 +52,7 @@ fun tokenize(s: String): Iterator<Token> = iterator {
             }
 
             s[i] == '"' -> {
+                i++
                 val r = StringBuilder()
                 while (i < s.length && s[i] != '"') {
                     r.append(s[i])
@@ -76,7 +97,7 @@ data class Token(val id: TokenId, val data: Any = Unit) : IToken {
 
     override fun isRParen(): Boolean = id == rparen
 
-    override fun toString(): String = data.toString()
+    override fun toString(): String = "T($id" + if (data !is Unit) ", $data)" else ")"
 }
 
 typealias TokenId = Int

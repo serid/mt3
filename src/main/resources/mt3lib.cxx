@@ -22,9 +22,9 @@ struct MT3Value : public GCObject {
     MT3Value(u8 tag) : tag(tag) {}
 };
 struct MT3Int : public MT3Value {
-    u64 value;
+    i64 value;
 
-    MT3Int(u64 value) : MT3Value(INT_TAG), value(value) {}
+    MT3Int(i64 value) : MT3Value(INT_TAG), value(value) {}
 };
 struct MT3Array : public MT3Value {
     std::vector<MT3Value*> values;
@@ -44,11 +44,9 @@ struct MT3String : public MT3Value {
     MT3String(std::string&& data) : MT3Value(STRING_TAG), data(data) {}
 };
 struct MT3Function : public MT3Value {
-    // TODO: use native calling convention where
     // this function pointer has type like (MT3Value* fun(MT3Value*, MT3Value*)).
-    // It would require monomorphizing call1, call2, call3 in LLVM IR
-    using MT3FunP = MT3Value* (*)(MT3Value** args);
-    MT3FunP fun;
+    // It would require monomorphing call1, call2, call3 in LLVM IR
+    void* fun;
 
     // TODO: toplevel MT3 functions and native functions don't need closures,
     // maybe this class should be split in two
@@ -58,10 +56,10 @@ struct MT3Function : public MT3Value {
     // when funptr is called
     u8 parameter_num;
 
-    MT3Function(u8 parameter_num, MT3FunP fun, std::vector<MT3Value*>&& closure) :
+    MT3Function(u8 parameter_num, void* fun, std::vector<MT3Value*>&& closure) :
         MT3Value(FUNCTION_TAG), parameter_num(parameter_num), fun(fun), closure(std::move(closure)) {}
 
-    MT3Function(u8 parameter_num, MT3FunP fun) :
+    MT3Function(u8 parameter_num, void* fun) :
         MT3Function(parameter_num, fun, {}) {}
 
     void visit() override {
@@ -84,30 +82,42 @@ T* gc_malloc(Args... args) {
 //     return static_cast<T*>(malloc(sizeof(T)));
 }
 
-// MT3Value newString(char*) {
-//     MT3Int* result = gc_malloc(sizeof(MT3Array));
-// }
+extern "C" MT3Value* mt3_new_int(i64 x) {
+    return gc_malloc<MT3Int>(x);
+}
 
-static MT3Value* builtin_call_cxx(MT3Value* function, u8 arg_num, MT3Value** args) {
+extern "C" MT3Value* mt3_new_string(char* s) {
+    return gc_malloc<MT3String>(s);
+}
+
+extern "C" MT3Value* mt3_new_function(u8 parameter_num, void* fun) {
+    return gc_malloc<MT3Function>(parameter_num, fun);
+}
+
+/// Check that the value is an MT3Function, match its number of arguments and return its function pointer.
+extern "C" void* mt3_check_function_call(MT3Value* function, u8 arg_num) {
     if (function->tag != FUNCTION_TAG)
         panic("'function' is not a function");
     auto casted_function = static_cast<MT3Function*>(function);
     if (casted_function->parameter_num != arg_num)
         panic("wrong number of arguments");
-
-    return casted_function->fun(args);
+    return reinterpret_cast<void*>(casted_function->fun);
 }
 
-extern "C" MT3ValueErased mt3_builtin_call(MT3ValueErased function, u8 arg_num, MT3ValueErased* args) {
-    return builtin_call_cxx(static_cast<MT3Value*>(function), arg_num, reinterpret_cast<MT3Value**>(args));
+/// This function will be reified in Codegen.kt
+extern "C" MT3Value* mt3_builtin_call0(MT3Value* function);
+
+// example of a monomorphic call sequence
+MT3Value* mt3_builtin_call2_example(MT3Value* function, MT3Value* arg1, MT3Value* arg2) {
+    auto fun = reinterpret_cast<MT3Value*(*)(MT3Value*, MT3Value*)>(mt3_check_function_call(function, 2));
+    return fun(arg1, arg2);
 }
 
-static MT3Value* mt3_print_impl(MT3Value** args) {
-    MT3Value* a = args[0];
-    if (a->tag == INT_TAG) {
-        printf("%lu", static_cast<MT3Int*>(a)->value);
-    } else if (a->tag == STRING_TAG) {
-        printf("%s", static_cast<MT3String*>(a)->data.data());
+static MT3Value* mt3_print_impl(MT3Value* arg) {
+    if (arg->tag == INT_TAG) {
+        printf("%lu", static_cast<MT3Int*>(arg)->value);
+    } else if (arg->tag == STRING_TAG) {
+        printf("%s", static_cast<MT3String*>(arg)->data.data());
     } else {
         panic("Unsupported types for builtin_print");
     }
@@ -115,12 +125,10 @@ static MT3Value* mt3_print_impl(MT3Value** args) {
 }
 
 // operator+
-static MT3Value* mt3_plus_impl(MT3Value** args) {
-    MT3Value* a = args[0];
-    MT3Value* b = args[1];
+static MT3Value* mt3_plus_impl(MT3Value* a, MT3Value* b) {
     if (a->tag == INT_TAG && b->tag == INT_TAG) {
         u64 sum = static_cast<MT3Int*>(a)->value + static_cast<MT3Int*>(b)->value;
-        return static_cast<MT3Value*>(gc_malloc<MT3Int>(sum));
+        return static_cast<MT3Value*>(mt3_new_int(sum));
     } else if (a->tag == STRING_TAG && b->tag == STRING_TAG) {
         MT3String* result = gc_malloc<MT3String>("");
         result->data += static_cast<MT3String*>(a)->data;
@@ -131,17 +139,17 @@ static MT3Value* mt3_plus_impl(MT3Value** args) {
 }
 
 // Here follow global variables with MT3Value-wrappers around stdlib functions
-static MT3Value* mt3_print_cxx = gc_malloc<MT3Function>(1, mt3_print_impl);
-static MT3Value* mt3_plus_cxx = gc_malloc<MT3Function>(2, mt3_plus_impl);
-extern "C" MT3ValueErased mt3_print = mt3_print_cxx;
-extern "C" MT3ValueErased mt3_plus = mt3_plus_cxx;
+static MT3Value* mt3_stdlib_print_cxx = gc_malloc<MT3Function>(1, reinterpret_cast<void*>(mt3_print_impl));
+static MT3Value* mt3_stdlib_plus_cxx = gc_malloc<MT3Function>(2, reinterpret_cast<void*>(mt3_plus_impl));
+extern "C" MT3ValueErased mt3_stdlib_print = mt3_stdlib_print_cxx;
+extern "C" MT3ValueErased mt3_stdlib_plus = mt3_stdlib_plus_cxx;
 
 // extern "C" MT3Value* mt3_mt3lib_gc_roots[] = {mt3_print, mt3_plus};
 // extern "C" const size_t mt3_mt3lib_gc_roots_size = std::extent<decltype(mt3_mt3lib_gc_roots)>::value;
 
 static void add_builtins_as_gc_roots() {
-    mt3_add_gc_root(mt3_print_cxx);
-    mt3_add_gc_root(mt3_plus_cxx);
+    mt3_add_gc_root_cxx(mt3_stdlib_print_cxx);
+    mt3_add_gc_root_cxx(mt3_stdlib_plus_cxx);
 }
 
 static void mt3_stdlib_init() {
@@ -149,11 +157,13 @@ static void mt3_stdlib_init() {
 }
 
 // Guest main function generated by the mt3 compiler using LLVM
-MT3ValueErased mt3_main;
+extern "C" MT3ValueErased mt3_main;
+extern "C" void mt3_mainmod_init();
 
 // This function is called from start.o or whatever
 int main() {
     mt3_stdlib_init();
+    mt3_mainmod_init();
 
-    mt3_builtin_call(mt3_main, 0, nullptr);
+    mt3_builtin_call0(static_cast<MT3Value*>(mt3_main));
 }

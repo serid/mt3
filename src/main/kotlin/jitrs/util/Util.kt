@@ -12,3 +12,5 @@ fun myAssert(b: Boolean) {
 }
 
 fun countFrom(from: Int): Sequence<Int> = generateSequence(1) { it + 1 }
+
+//fun StringBuilder.appendIndentedLine(s: String): StringBuilder = this.appendLine("    $s")

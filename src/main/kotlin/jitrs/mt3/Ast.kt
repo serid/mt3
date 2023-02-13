@@ -46,7 +46,9 @@ sealed class Toplevel {
         val name: String,
         val params: Array<String>,
         val body: Array<Stmt>
-    ) : Toplevel()
+    ) : Toplevel() {
+        fun arity(): Int = params.size
+    }
 }
 
 sealed class Stmt {
@@ -60,5 +62,7 @@ sealed class Expr {
 
     data class GlobalRef(val name: String) : Expr()
 
-    data class Call(val func: Expr, val args: Array<Expr>) : Expr()
+    data class Call(val func: Expr, val args: Array<Expr>) : Expr() {
+        fun arity(): Int = args.size
+    }
 }
