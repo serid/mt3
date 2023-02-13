@@ -10,3 +10,5 @@ fun myAssert(b: Boolean) {
     if (!b)
         throw RuntimeException("assertion failed")
 }
+
+fun countFrom(from: Int): Sequence<Int> = generateSequence(1) { it + 1 }

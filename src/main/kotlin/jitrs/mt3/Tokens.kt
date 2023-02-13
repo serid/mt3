@@ -6,7 +6,7 @@ fun tokenize(s: String): Iterator<Token> = iterator {
     var i = 0
 
     while (true) {
-        while (i < s.length && s[i] == ' ') i++
+        while (i < s.length && s[i].isWhitespace()) i++
 
         if (i >= s.length) break
 

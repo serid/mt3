@@ -2,6 +2,7 @@ package jitrs.mt3
 
 import jitrs.util.PeekableIterator
 import jitrs.util.priceyToArray
+import java.nio.file.Files
 
 fun main(args: Array<String>) {
     println("Hello World!")
@@ -23,6 +24,8 @@ fun main(args: Array<String>) {
     println(sexprs.joinToString())
     println(program)
     println(lir)
+
+    Files.writeString(mt3MainLl, lir)
 
     link()
 }
