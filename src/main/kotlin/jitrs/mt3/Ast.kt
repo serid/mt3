@@ -3,7 +3,6 @@
 package jitrs.mt3
 
 import jitrs.util.cast
-import jitrs.util.isInstance
 import jitrs.util.priceyToArray
 
 fun programfromSExprs(es: Array<MT3SExpr>): Program = Program(es.map(::toplevelFromSExpr).toTypedArray())
@@ -26,7 +25,7 @@ fun stmtFromSExpr(e: MT3SExpr): Stmt = Stmt.ExprStmt(exprFromSExpr(e))
 fun exprFromSExpr(e: MT3SExpr): Expr = when {
     e is MT3Leaf && e.token.id == int -> Expr.IntConst(e.token.getInt())
     e is MT3Leaf && e.token.id == string -> Expr.StringConst(e.token.getString())
-    e is MT3Leaf && e.token.id == ident -> Expr.GlobalRef(e.token.getIdent())
+    e is MT3Leaf && e.token.id == ident -> Expr.GlobalVarUse(e.token.getIdent())
     e is MT3Node -> Expr.Call(
         exprFromSExpr(e.subexprs[0]),
         e.subexprs.asSequence().drop(1).map(::exprFromSExpr).priceyToArray()
@@ -60,7 +59,7 @@ sealed class Expr {
 
     data class StringConst(val string: String) : Expr()
 
-    data class GlobalRef(val name: String) : Expr()
+    data class GlobalVarUse(val name: String) : Expr()
 
     data class Call(val func: Expr, val args: Array<Expr>) : Expr() {
         fun arity(): Int = args.size

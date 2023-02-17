@@ -138,7 +138,7 @@ static MT3Value* mt3_plus_impl(MT3Value* a, MT3Value* b) {
     panic("Unsupported types for operator_plus");
 }
 
-// Here follow global variables with MT3Value-wrappers around stdlib functions
+// Here follow native global variables with MT3Value-wrappers around stdlib functions
 static MT3Value* mt3_stdlib_print_cxx = gc_malloc<MT3Function>(1, reinterpret_cast<void*>(mt3_print_impl));
 static MT3Value* mt3_stdlib_plus_cxx = gc_malloc<MT3Function>(2, reinterpret_cast<void*>(mt3_plus_impl));
 extern "C" MT3ValueErased mt3_stdlib_print = mt3_stdlib_print_cxx;

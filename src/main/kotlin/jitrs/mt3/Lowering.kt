@@ -16,9 +16,9 @@ class Lowering(val moduleName: String) {
     val codegen = Codegen()
 
     /**
-     * When traversing a module, index of the current free global variable where a string literal can be allocated.
+     * When traversing a module, index of the current free native global variable where a string literal can be allocated.
      */
-    private var moduleGlobalsIndex = 1
+    private var moduleNativeGlobalsIndex = 1
 
     /**
      * When traversing a function, this is the index of the current free SSA-variable.
@@ -87,17 +87,17 @@ class Lowering(val moduleName: String) {
                 codegen.appendBody("    ret $MT3ValueErased null\n")
                 codegen.appendBody("}\n\n")
 
-                val valueId = if (toplevel.name == "main") "mt3_main" else "mt3_funV${allocateGlobalsIndex()}"
+                val valueId = if (toplevel.name == "main") "mt3_main" else "mt3_funV${allocateNativeGlobalsIndex()}"
                 val modifier = if (toplevel.name == "main") "local_unnamed_addr" else "private unnamed_addr"
 
-                // Create a global holding MT3Value* pointer to a function value
+                // Create a native global holding MT3Value* pointer to a function value
                 codegen.appendHeader("@$valueId = $modifier global %MT3Value* null, align 8\n")
 
                 moduleInitializer.add(ExprFactory { v ->
                     var r = "    ; Allocate function\n"
                     r += "    %$v = bitcast %MT3Value* ()* @$funName to i8*\n"
                     r += "    %${v + 1} = tail call %MT3Value* @mt3_new_function(i8 ${toplevel.arity()}, i8* %$v)\n"
-                    r += emitInitializeGlobal(v + 1, valueId)
+                    r += emitInitializeGlobalVar(v + 1, valueId)
                     Pair(r, v + 2)
                 })
             }
@@ -118,43 +118,41 @@ class Lowering(val moduleName: String) {
     private fun visitExpr(expr: Expr): VisitExprResult {
         when (expr) {
             is Expr.IntConst -> {
-                val valueId = "mt3_intV${allocateGlobalsIndex()}"
+                val valueId = "mt3_intV${allocateNativeGlobalsIndex()}"
 
-                // Create a global holding MT3Value* pointer to a string value
+                // Create a native global holding MT3Value* pointer to a string value
                 codegen.appendHeader("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
 
                 moduleInitializer.add(ExprFactory { v ->
                     var r = "    ; Allocate int\n"
                     r += "    %$v = tail call %MT3Value* @mt3_new_int(i64 ${expr.int})\n"
-                    r += emitInitializeGlobal(v, valueId)
+                    r += emitInitializeGlobalVar(v, valueId)
                     Pair(r, v + 1)
                 })
 
-                // At this point an int is just a global value
-                return emitLoadGlobal(Expr.GlobalRef(valueId))
+                return emitLoadGlobalVar(Expr.GlobalVarUse(valueId))
             }
 
             is Expr.StringConst -> {
                 val lenWithNull = (expr.string.length + 1).toString()
-                val id = allocateGlobalsIndex()
+                val id = allocateNativeGlobalsIndex()
                 val bytesId = "mt3_str$id"
                 val valueId = "mt3_strV$id"
 
-                // Create a global holding bytes of this string literal
+                // Create a native global holding bytes of this string literal
                 codegen.appendHeader("@$bytesId = private unnamed_addr constant [$lenWithNull x i8] c\"${expr.string}\\00\", align 1\n")
 
-                // Create a global holding MT3Value* pointer to a string value
+                // Create a native global holding MT3Value* pointer to a string value
                 codegen.appendHeader("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
 
                 moduleInitializer.add(ExprFactory { v ->
                     var r = "    ; Allocate string\n"
                     r += "    %$v = tail call %MT3Value* @mt3_new_string(i8* getelementptr inbounds ([$lenWithNull x i8], [$lenWithNull x i8]* @$bytesId, i64 0, i64 0))\n"
-                    r += emitInitializeGlobal(v, valueId)
+                    r += emitInitializeGlobalVar(v, valueId)
                     Pair(r, v + 1)
                 })
 
-                // At this point a string is just a global value
-                return emitLoadGlobal(Expr.GlobalRef(valueId))
+                return emitLoadGlobalVar(Expr.GlobalVarUse(valueId))
             }
 
             is Expr.Call -> {
@@ -170,20 +168,20 @@ class Lowering(val moduleName: String) {
                 return VisitExprResult.SsaIndex(ix)
             }
 
-            is Expr.GlobalRef -> {
-                return emitLoadGlobal(expr)
+            is Expr.GlobalVarUse -> {
+                return emitLoadGlobalVar(expr)
             }
         }
     }
 
-    private fun emitInitializeGlobal(v: Int, globalId: String): String = """
-    |    ; Store allocated value to a global variable
+    private fun emitInitializeGlobalVar(v: Int, globalId: String): String = """
+    |    ; Store allocated value to a native global variable
     |    store %MT3Value* %$v, %MT3Value** @$globalId, align 8
     |    ${emitRegisterGcRoot(v)}
     |
     """.trimMargin()
 
-    private fun emitLoadGlobal(expr: Expr.GlobalRef): VisitExprResult {
+    private fun emitLoadGlobalVar(expr: Expr.GlobalVarUse): VisitExprResult {
         var name = expr.name
         name = mangle(name)
 
@@ -220,7 +218,7 @@ class Lowering(val moduleName: String) {
 
     private fun allocateSsaVariable(): Int = localVariableIndex++
 
-    private fun allocateGlobalsIndex(): Int = moduleGlobalsIndex++
+    private fun allocateNativeGlobalsIndex(): Int = moduleNativeGlobalsIndex++
 
     private fun emitRegisterGcRoot(ix: Int): String = "tail call void @mt3_add_gc_root($MT3ValueErased %$ix)"
 }
