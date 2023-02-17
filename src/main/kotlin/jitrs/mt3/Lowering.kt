@@ -1,10 +1,10 @@
 package jitrs.mt3
 
+import jitrs.mt3.llvm.Codegen
 import jitrs.mt3.llvm.ExprFactory
 import jitrs.util.countFrom
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.StringJoiner
 
 // Assumes clang version 14.0.6
 
@@ -13,18 +13,7 @@ import java.util.StringJoiner
  * LLVM module, then links it with mt3lib.ll.
  */
 class Lowering(val moduleName: String) {
-    /**
-     * Code produced during tree walking that should be inserted before [bodyCode].
-     * Examples: type declarations, function imports and string constants.
-     */
-    private val headerCode = StringBuilder()
-
-    private val bodyCode = StringBuilder()
-
-    /**
-     * Code produced during tree walking that may be put after [bodyCode].
-     */
-    private val footerCode = StringBuilder()
+    val codegen = Codegen()
 
     /**
      * When traversing a module, index of the current free global variable where a string literal can be allocated.
@@ -45,41 +34,33 @@ class Lowering(val moduleName: String) {
     private val moduleInitializer = ArrayList<ExprFactory>()
 
     fun toLlvm(program: Program): String {
-        headerCode.append("; <HEADER>\n")
-        bodyCode.append("; <BODY>\n")
-        footerCode.append("; <FOOTER>\n")
-
         visitProgram(program)
-        callSequencesToGenerate.forEach { i -> reifyCallSequence(headerCode, i) }
-
-        headerCode.append("; </ HEADER>\n\n")
-        bodyCode.append("; </ BODY>\n\n")
-        footerCode.append("; </ FOOTER>\n")
-
-        headerCode.append(bodyCode.toString())
-        headerCode.append(footerCode.toString())
-        return headerCode.toString()
+        callSequencesToGenerate.forEach { i -> reifyCallSequence(codegen.headerCode, i) }
+        return codegen.get()
     }
 
     private fun visitProgram(program: Program) {
-        headerCode.append("; <codegen_include.ll>\n")
-        headerCode.append(Files.readString(Path.of("./src/main/resources/codegen_include.ll")) + "\n")
-        headerCode.append("; </ codegen_include.ll>\n\n")
+        codegen.appendHeader("""
+            |; <codegen_include.ll>
+            |${Files.readString(Path.of("./src/main/resources/codegen_include.ll"))}
+            |; </ codegen_include.ll>
+            |
+        """.trimMargin())
 
         program.toplevels.forEach {
             visitToplevel(it)
         }
 
         // Emit module initializer
-        bodyCode.append("define void @mt3_mainmod_init() {\n")
+        codegen.appendBody("define void @mt3_mainmod_init() {\n")
         localVariableIndex = 1
         moduleInitializer.forEach {
             val (r, ix) = it.factory(localVariableIndex)
-            bodyCode.append(r)
+            codegen.appendBody(r)
             localVariableIndex = ix
         }
-        bodyCode.append("    ret void\n")
-        bodyCode.append("}\n")
+        codegen.appendBody("    ret void\n")
+        codegen.appendBody("}\n")
     }
 
     private fun visitToplevel(toplevel: Toplevel) {
@@ -97,20 +78,20 @@ class Lowering(val moduleName: String) {
 
                 val funName = manglePrivate(toplevel.name)
 
-                bodyCode.append("define $MT3ValueErased @$funName() {\n")
+                codegen.appendBody("define $MT3ValueErased @$funName() {\n")
 
                 toplevel.body.forEach {
                     visitStmt(it)
                 }
 
-                bodyCode.append("    ret $MT3ValueErased null\n")
-                bodyCode.append("}\n\n")
+                codegen.appendBody("    ret $MT3ValueErased null\n")
+                codegen.appendBody("}\n\n")
 
                 val valueId = if (toplevel.name == "main") "mt3_main" else "mt3_funV${allocateGlobalsIndex()}"
                 val modifier = if (toplevel.name == "main") "local_unnamed_addr" else "private unnamed_addr"
 
                 // Create a global holding MT3Value* pointer to a function value
-                headerCode.append("@$valueId = $modifier global %MT3Value* null, align 8\n")
+                codegen.appendHeader("@$valueId = $modifier global %MT3Value* null, align 8\n")
 
                 moduleInitializer.add(ExprFactory { v ->
                     var r = "    ; Allocate function\n"
@@ -140,7 +121,7 @@ class Lowering(val moduleName: String) {
                 val valueId = "mt3_intV${allocateGlobalsIndex()}"
 
                 // Create a global holding MT3Value* pointer to a string value
-                headerCode.append("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
+                codegen.appendHeader("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
 
                 moduleInitializer.add(ExprFactory { v ->
                     var r = "    ; Allocate int\n"
@@ -160,10 +141,10 @@ class Lowering(val moduleName: String) {
                 val valueId = "mt3_strV$id"
 
                 // Create a global holding bytes of this string literal
-                headerCode.append("@$bytesId = private unnamed_addr constant [$lenWithNull x i8] c\"${expr.string}\\00\", align 1\n")
+                codegen.appendHeader("@$bytesId = private unnamed_addr constant [$lenWithNull x i8] c\"${expr.string}\\00\", align 1\n")
 
                 // Create a global holding MT3Value* pointer to a string value
-                headerCode.append("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
+                codegen.appendHeader("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
 
                 moduleInitializer.add(ExprFactory { v ->
                     var r = "    ; Allocate string\n"
@@ -185,7 +166,7 @@ class Lowering(val moduleName: String) {
                 }).joinToString()
                 val ix = allocateSsaVariable()
 
-                bodyCode.append("    %$ix = tail call %MT3Value* @mt3_builtin_call${expr.arity()}($args)\n")
+                codegen.appendBody("    %$ix = tail call %MT3Value* @mt3_builtin_call${expr.arity()}($args)\n")
                 return VisitExprResult.SsaIndex(ix)
             }
 
@@ -207,7 +188,7 @@ class Lowering(val moduleName: String) {
         name = mangle(name)
 
         val ix = allocateSsaVariable()
-        bodyCode.append("    %$ix = load %MT3Value*, %MT3Value** @$name, align 8\n")
+        codegen.appendBody("    %$ix = load %MT3Value*, %MT3Value** @$name, align 8\n")
         return VisitExprResult.SsaIndex(ix)
     }
 

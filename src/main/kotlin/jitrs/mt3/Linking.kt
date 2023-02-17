@@ -13,6 +13,7 @@ fun link() {
     startProcessWithStdout(
         "clang++",
         *cxxFlags,
+        *linkerFlags,
         *debugFlags,
         mt3Cxx.absolutePathString(),
         mt3MainLl.absolutePathString(),
