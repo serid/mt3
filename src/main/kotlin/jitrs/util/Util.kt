@@ -11,6 +11,6 @@ fun myAssert(b: Boolean) {
         throw RuntimeException("assertion failed")
 }
 
-fun countFrom(from: Int): Sequence<Int> = generateSequence(1) { it + 1 }
+fun countFrom(from: Int): Sequence<Int> = generateSequence(from) { it + 1 }
 
 //fun StringBuilder.appendIndentedLine(s: String): StringBuilder = this.appendLine("    $s")
