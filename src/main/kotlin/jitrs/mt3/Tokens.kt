@@ -33,12 +33,12 @@ fun tokenize(s: String): Iterator<Token> = iterator {
         when {
             s[i] == '(' -> {
                 i++
-                yield(Token(lparen))
+                yield(Token(lParenT))
             }
 
             s[i] == ')' -> {
                 i++
-                yield(Token(rparen))
+                yield(Token(rParenT))
             }
 
             s[i].isDigit() -> {
@@ -48,7 +48,7 @@ fun tokenize(s: String): Iterator<Token> = iterator {
                     n += s[i].digitToInt()
                     i++
                 }
-                yield(Token(int, n))
+                yield(Token(intT, n))
             }
 
             s[i] == '"' -> {
@@ -67,7 +67,7 @@ fun tokenize(s: String): Iterator<Token> = iterator {
                     throw RuntimeException("Expected ending quote")
                 // Here s[i] == '"', skip it
                 i++
-                yield(Token(string, r.toString()))
+                yield(Token(stringT, r.toString()))
             }
 
             isIdentStart(s[i]) -> {
@@ -76,7 +76,7 @@ fun tokenize(s: String): Iterator<Token> = iterator {
                     r.append(s[i])
                     i++
                 }
-                yield(Token(ident, r.toString()))
+                yield(Token(identT, r.toString()))
             }
         }
     }
@@ -84,23 +84,23 @@ fun tokenize(s: String): Iterator<Token> = iterator {
 
 data class Token(val id: TokenId, val data: Any = Unit) : IToken {
     fun getInt(): Int {
-        myAssert(id == int)
+        myAssert(id == intT)
         return data as Int
     }
 
     fun getIdent(): String {
-        myAssert(id == ident)
+        myAssert(id == identT)
         return data as String
     }
 
     fun getString(): String {
-        myAssert(id == string)
+        myAssert(id == stringT)
         return data as String
     }
 
-    override fun isLParen(): Boolean = id == lparen
+    override fun isLParen(): Boolean = id == lParenT
 
-    override fun isRParen(): Boolean = id == rparen
+    override fun isRParen(): Boolean = id == rParenT
 
     override fun toString(): String = "T($id" + if (data !is Unit) ", $data)" else ")"
 }
@@ -108,11 +108,11 @@ data class Token(val id: TokenId, val data: Any = Unit) : IToken {
 typealias TokenId = Int
 
 val tokenIds: Array<String> = arrayOf("(", ")", "<int>", "<ident>", "<string>")
-val lparen: TokenId = tokenIds.indexOf("(")
-val rparen: TokenId = tokenIds.indexOf(")")
-val int: TokenId = tokenIds.indexOf("<int>")
-val ident: TokenId = tokenIds.indexOf("<ident>")
-val string: TokenId = tokenIds.indexOf("<string>")
+val lParenT: TokenId = tokenIds.indexOf("(")
+val rParenT: TokenId = tokenIds.indexOf(")")
+val intT: TokenId = tokenIds.indexOf("<int>")
+val identT: TokenId = tokenIds.indexOf("<ident>")
+val stringT: TokenId = tokenIds.indexOf("<string>")
 
 //fun isIdentStart(c: Char): Boolean = c.isLetter() || c == '-'
 fun isIdentStart(c: Char): Boolean = isAsciiPrintable(c) && c != '(' && c != ')' && c != '"' && !c.isDigit()

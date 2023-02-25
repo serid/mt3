@@ -23,9 +23,9 @@ fun toplevelFromSExpr(e: MT3SExpr): Toplevel {
 fun stmtFromSExpr(e: MT3SExpr): Stmt = Stmt.ExprStmt(exprFromSExpr(e))
 
 fun exprFromSExpr(e: MT3SExpr): Expr = when {
-    e is MT3Leaf && e.token.id == int -> Expr.IntConst(e.token.getInt())
-    e is MT3Leaf && e.token.id == string -> Expr.StringConst(e.token.getString())
-    e is MT3Leaf && e.token.id == ident -> Expr.GlobalVarUse(e.token.getIdent())
+    e is MT3Leaf && e.token.id == intT -> Expr.IntConst(e.token.getInt())
+    e is MT3Leaf && e.token.id == stringT -> Expr.StringConst(e.token.getString())
+    e is MT3Leaf && e.token.id == identT -> Expr.GlobalVarUse(e.token.getIdent())
     e is MT3Node -> Expr.Call(
         exprFromSExpr(e.subexprs[0]),
         e.subexprs.asSequence().drop(1).map(::exprFromSExpr).priceyToArray()
