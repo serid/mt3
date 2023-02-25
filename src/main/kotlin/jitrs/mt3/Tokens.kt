@@ -55,8 +55,13 @@ fun tokenize(s: String): Iterator<Token> = iterator {
                 i++
                 val r = StringBuilder()
                 while (i < s.length && s[i] != '"') {
-                    r.append(s[i])
-                    i++
+                    if (i + 1 < s.length && s[i] == '\\' && s[i + 1] == 'n') {
+                        r.append('\n')
+                        i += 2
+                    } else {
+                        r.append(s[i])
+                        i++
+                    }
                 }
                 if (i == s.length)
                     throw RuntimeException("Expected ending quote")
