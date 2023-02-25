@@ -12,8 +12,13 @@ import java.nio.file.Path
  * Convert an AST of an MT3 program to LLVM IR. This compiler is not incremental and puts all MT3 modules in one
  * LLVM module, then links it with mt3lib.ll.
  */
-class Lowering(val moduleName: String) {
-    val codegen = Codegen()
+class Lowering(private val moduleName: String) {
+    private val codegen = Codegen()
+
+    private val globalVars = hashMapOf(
+        "print" to "mt3_stdlib_print",
+        "plus" to "mt3_stdlib_plus"
+    )
 
     /**
      * When traversing a module, index of the current free native global variable where a string literal can be allocated.
@@ -76,9 +81,11 @@ class Lowering(val moduleName: String) {
                 //var funName =
                 //    if (toplevel.name == "main" || toplevel.name.startsWith("mt3_")) "mt3_${toplevel.name}" else toplevel.name
 
-                val funName = manglePrivate(toplevel.name)
+                val shortName = mangle(toplevel.name)
+                val longName = "mt3_${moduleName}_$shortName"
+                val codeName = "${longName}-fun"
 
-                codegen.appendBody("define $MT3ValueErased @$funName() {\n")
+                codegen.appendBody("define $MT3ValueErased @$codeName() {\n")
 
                 toplevel.body.forEach {
                     visitStmt(it)
@@ -87,7 +94,7 @@ class Lowering(val moduleName: String) {
                 codegen.appendBody("    ret $MT3ValueErased null\n")
                 codegen.appendBody("}\n\n")
 
-                val valueId = if (toplevel.name == "main") "mt3_main" else "mt3_funV${allocateNativeGlobalsIndex()}"
+                val valueId = if (toplevel.name == "main") "mt3_main" else longName
                 val modifier = if (toplevel.name == "main") "local_unnamed_addr" else "private unnamed_addr"
 
                 // Create a native global holding MT3Value* pointer to a function value
@@ -95,11 +102,16 @@ class Lowering(val moduleName: String) {
 
                 moduleInitializer.add(ExprFactory { v ->
                     var r = "    ; Allocate function\n"
-                    r += "    %$v = bitcast %MT3Value* ()* @$funName to i8*\n"
+                    r += "    %$v = bitcast %MT3Value* ()* @$codeName to i8*\n"
                     r += "    %${v + 1} = tail call %MT3Value* @mt3_new_function(i8 ${toplevel.arity()}, i8* %$v)\n"
                     r += emitInitializeGlobalVar(v + 1, valueId)
                     Pair(r, v + 2)
                 })
+
+                if (globalVars.containsKey(shortName))
+                    println("warning: global var $shortName already exists")
+
+                globalVars[shortName] = longName
             }
         }
     }
@@ -130,7 +142,7 @@ class Lowering(val moduleName: String) {
                     Pair(r, v + 1)
                 })
 
-                return emitLoadGlobalVar(Expr.GlobalVarUse(valueId))
+                return emitLoadGlobalVar(valueId)
             }
 
             is Expr.StringConst -> {
@@ -152,7 +164,7 @@ class Lowering(val moduleName: String) {
                     Pair(r, v + 1)
                 })
 
-                return emitLoadGlobalVar(Expr.GlobalVarUse(valueId))
+                return emitLoadGlobalVar(valueId)
             }
 
             is Expr.Call -> {
@@ -169,7 +181,11 @@ class Lowering(val moduleName: String) {
             }
 
             is Expr.GlobalVarUse -> {
-                return emitLoadGlobalVar(expr)
+                var name = expr.name
+                name = mangle(name)
+                name = globalVars[name]!!
+
+                return emitLoadGlobalVar(name)
             }
         }
     }
@@ -181,10 +197,7 @@ class Lowering(val moduleName: String) {
     |
     """.trimMargin()
 
-    private fun emitLoadGlobalVar(expr: Expr.GlobalVarUse): VisitExprResult {
-        var name = expr.name
-        name = mangle(name)
-
+    private fun emitLoadGlobalVar(name: String): VisitExprResult {
         val ix = allocateSsaVariable()
         codegen.appendBody("    %$ix = load %MT3Value*, %MT3Value** @$name, align 8\n")
         return VisitExprResult.SsaIndex(ix)
@@ -210,11 +223,8 @@ class Lowering(val moduleName: String) {
     // TODO: resolve collisions with names containing "plus"
     private fun mangle(name: String): String {
         var r = name.replace("+", "plus")
-        if (r in arrayOf("print", "plus")) r = "mt3_stdlib_$r"
         return r
     }
-
-    private fun manglePrivate(name: String): String = "${moduleName}_${mangle(name)}"
 
     private fun allocateSsaVariable(): Int = localVariableIndex++
 
@@ -245,4 +255,4 @@ private fun reifyCallSequence(output: StringBuilder, arity: Int) {
 }
 
 // Generated code treats objects as opaque pointers
-private val MT3ValueErased = "%MT3Value*"
+private const val MT3ValueErased = "%MT3Value*"
