@@ -12,14 +12,16 @@ fun main(args: Array<String>) {
     println("Program arguments: ${args.joinToString()}")
 
     val src = """
-        |(fun f ()
-        |    (print "f1")
-        |    (print "f2")
+        |(fun println (s)
+        |    (print s)
+        |    (print "\n")
         |)
+        |
         |(fun main ()
-        |    (print "Doge ")
-        |    (f)
-        |    (print (+ 1 2))
+        |    (println "Doge")
+        |    (let number (+ 1 2))
+        |    (print "Test: ")
+        |    (print number)
         |)
     """.trimMargin()
     val tokens = tokenize(src).asSequence().priceyToArray()

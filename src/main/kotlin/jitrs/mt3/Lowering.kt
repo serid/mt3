@@ -28,7 +28,9 @@ class Lowering(private val moduleName: String) {
     /**
      * When traversing a function, this is the index of the current free SSA-variable.
      */
-    private var localVariableIndex = 0
+    private var ssaVariableIndex = 0
+
+    private val localVariables = hashMapOf<String, Int>()
 
     /**
      * Codegen will reify call sequences with arities from this set.
@@ -69,7 +71,7 @@ class Lowering(private val moduleName: String) {
     private fun visitToplevel(toplevel: Toplevel) {
         when (toplevel) {
             is Toplevel.Fun -> {
-                localVariableIndex = toplevel.params.size + 1
+                val arity = toplevel.params.size
 
                 // mt3lib.cxx expects the main function to be called mt3_main.
                 // Also prefix a user-provided symbol with another "mt3_" if it already starts with one.
@@ -83,7 +85,38 @@ class Lowering(private val moduleName: String) {
                 val longName = "mt3_${moduleName}_$shortName"
                 val codeName = "${longName}-fun"
 
-                codegen.appendBody("define $MT3ValueErased @$codeName() {\n")
+                // Add the function name to globals before lowering it to allow recursion
+                if (globalVars.put(shortName, longName) != null)
+                    throw RuntimeException("warning: global var $shortName already exists")
+
+                val generatedParameters = countFrom(0).take(arity).map { "%MT3Value* %$it" }.joinToString()
+
+                codegen.appendBody("define $MT3ValueErased @$codeName($generatedParameters) {\n")
+
+                // Skip ssa-s already used for generatedParameters
+                ssaVariableIndex = arity + 1
+                localVariables.clear()
+
+                // Add parameters as local variables
+                toplevel.params.forEachIndexed { index, name ->
+                    val ssa = allocateSsaVariable()
+                    if (localVariables.put(name, ssa) != null)
+                        throw RuntimeException("error: parameter $name already exists")
+                    emitAllocaLocalVariable(ssa, "%$index")
+                }
+
+                // Add local variables as local variables
+                val declarations = collectFunctionsVariables(toplevel, HashSet(localVariables.keys))
+                declarations.forEach { def ->
+                    val noneSsa = emitLoadNone().toCode()
+                    val ssa = allocateSsaVariable()
+                    if (localVariables.put(def.name, ssa) != null)
+                        throw RuntimeException("error: local var ${def.name} already exists")
+                    emitAllocaLocalVariable(ssa, noneSsa)
+                }
+
+                // idk
+//                allocateSsaVariable()
 
                 toplevel.body.forEach {
                     visitStmt(it)
@@ -96,6 +129,8 @@ class Lowering(private val moduleName: String) {
                 val valueId = if (toplevel.name == "main") "mt3_main" else longName
                 val modifier = if (toplevel.name == "main") "local_unnamed_addr" else "private unnamed_addr"
 
+                val funPtrTypeList = countFrom(1).take(arity).map { "%MT3Value*" }.joinToString()
+
                 // Create a native global holding MT3Value* pointer to a function value
                 codegen.appendHeader("@$valueId = $modifier global %MT3Value* null, align 8\n")
 
@@ -103,21 +138,26 @@ class Lowering(private val moduleName: String) {
                     val casted = func.allocateSsaVariable()
                     val res = func.allocateSsaVariable()
                     func.body.append("    ; Allocate function\n")
-                    func.body.append("    %$casted = bitcast %MT3Value* ()* @$codeName to i8*\n")
+                    func.body.append("    %$casted = bitcast %MT3Value* ($funPtrTypeList)* @$codeName to i8*\n")
                     func.body.append("    %$res = tail call %MT3Value* @mt3_new_function(i8 ${toplevel.arity()}, i8* %$casted)\n")
                     emitInitializeGlobalVar(func, res, valueId)
                 }
 
-                if (globalVars.containsKey(shortName))
+                if (globalVars.put(shortName, longName) != null)
                     println("warning: global var $shortName already exists")
-
-                globalVars[shortName] = longName
             }
         }
     }
 
     private fun visitStmt(stmt: Stmt) {
         when (stmt) {
+            is Stmt.VariableDefinition -> {
+                // Replace the MT3None with a value
+                val where = localVariables[stmt.name]
+                val what = visitExpr(stmt.initializer).toCode()
+                codegen.appendBody("    store %MT3Value* $what, %MT3Value** %$where, align 8\n")
+            }
+
             is Stmt.ExprStmt -> {
                 visitExpr(stmt.e)
             }
@@ -180,12 +220,21 @@ class Lowering(private val moduleName: String) {
                 return VisitExprResult.SsaIndex(ix)
             }
 
-            is Expr.GlobalVarUse -> {
-                var name = expr.name
-                name = mangle(name)
-                name = globalVars[name]!!
+            is Expr.VariableUse -> {
+                val name = mangle(expr.name)
 
-                return emitLoadGlobalVar(name)
+                localVariables[name].also {
+                    if (it != null) {
+                        val res = allocateSsaVariable()
+                        codegen.appendBody("    %$res = load %MT3Value*, %MT3Value** %$it, align 8\n")
+                        return VisitExprResult.SsaIndex(res)
+                    }
+                }
+                globalVars[name].also {
+                    if (it != null)
+                        return emitLoadGlobalVar(it)
+                }
+                throw RuntimeException("variable not found: $name")
             }
         }
     }
@@ -203,6 +252,11 @@ class Lowering(private val moduleName: String) {
         val ix = allocateSsaVariable()
         codegen.appendBody("    %$ix = load %MT3Value*, %MT3Value** @$name, align 8\n")
         return VisitExprResult.SsaIndex(ix)
+    }
+
+    private fun emitAllocaLocalVariable(ssa: Int, initializer: String) {
+        codegen.appendBody("    %$ssa = alloca %MT3Value*, align 8\n")
+        codegen.appendBody("    store %MT3Value* $initializer, %MT3Value** %$ssa, align 8\n")
     }
 
     private fun emitLoadNone(): VisitExprResult {
@@ -232,7 +286,7 @@ class Lowering(private val moduleName: String) {
         return r
     }
 
-    private fun allocateSsaVariable(): Int = localVariableIndex++
+    private fun allocateSsaVariable(): Int = ssaVariableIndex++
 
     private fun allocateNativeGlobalsIndex(): Int = moduleNativeGlobalsIndex++
 
