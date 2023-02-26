@@ -32,9 +32,11 @@ fun main(args: Array<String>) {
     println(tokens.joinToString())
     println(sexprs.joinToString())
     println(program)
-    println(lir)
+//    println(lir)
 
     Files.writeString(mt3MainLl, lir)
 
-    link()
+    val beforeLink = System.nanoTime()
+    Linker(Linker.Mode.DEBUG).link()
+    println("info: transpilation and linking took ${(System.nanoTime() - beforeLink) / 1_000_000} ms")
 }
