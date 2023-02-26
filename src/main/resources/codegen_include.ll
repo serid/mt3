@@ -3,11 +3,12 @@
 
 target triple = "x86_64-unknown-linux-gnu"
 
+%GCObject = type opaque
 %MT3Value = type opaque
 
 declare void @mt3_stdlib_init()
 declare i8* @mt3_check_function_call(%MT3Value*, i8)
-declare void @mt3_add_gc_root(%MT3Value*)
+declare void @mt3_add_gc_root(%GCObject*)
 
 declare %MT3Value* @mt3_new_int(i64)
 declare %MT3Value* @mt3_new_string(i8*)

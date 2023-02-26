@@ -1,7 +1,7 @@
 package jitrs.mt3
 
 import jitrs.mt3.llvm.Codegen
-import jitrs.mt3.llvm.ExprFactory
+import jitrs.mt3.llvm.FunctionContext
 import jitrs.util.countFrom
 import java.nio.file.Files
 import java.nio.file.Path
@@ -36,7 +36,7 @@ class Lowering(private val moduleName: String) {
      */
     private val callSequencesToGenerate = hashSetOf(0)
 
-    private val moduleInitializer = ArrayList<ExprFactory>()
+    private val moduleInitializer = ArrayList<(functionContext: FunctionContext) -> Unit>()
 
     fun toLlvm(program: Program): String {
         visitProgram(program)
@@ -58,11 +58,9 @@ class Lowering(private val moduleName: String) {
 
         // Emit module initializer
         codegen.appendBody("define void @mt3_mainmod_init() {\n")
-        localVariableIndex = 1
+        val initializer = FunctionContext(codegen.bodyCode)
         moduleInitializer.forEach {
-            val (r, ix) = it.factory(localVariableIndex)
-            codegen.appendBody(r)
-            localVariableIndex = ix
+            it(initializer)
         }
         codegen.appendBody("    ret void\n")
         codegen.appendBody("}\n")
@@ -100,13 +98,14 @@ class Lowering(private val moduleName: String) {
                 // Create a native global holding MT3Value* pointer to a function value
                 codegen.appendHeader("@$valueId = $modifier global %MT3Value* null, align 8\n")
 
-                moduleInitializer.add(ExprFactory { v ->
-                    var r = "    ; Allocate function\n"
-                    r += "    %$v = bitcast %MT3Value* ()* @$codeName to i8*\n"
-                    r += "    %${v + 1} = tail call %MT3Value* @mt3_new_function(i8 ${toplevel.arity()}, i8* %$v)\n"
-                    r += emitInitializeGlobalVar(v + 1, valueId)
-                    Pair(r, v + 2)
-                })
+                moduleInitializer.add { func ->
+                    val casted = func.allocateSsaVariable()
+                    val res = func.allocateSsaVariable()
+                    func.body.append("    ; Allocate function\n")
+                    func.body.append("    %$casted = bitcast %MT3Value* ()* @$codeName to i8*\n")
+                    func.body.append("    %$res = tail call %MT3Value* @mt3_new_function(i8 ${toplevel.arity()}, i8* %$casted)\n")
+                    emitInitializeGlobalVar(func, res, valueId)
+                }
 
                 if (globalVars.containsKey(shortName))
                     println("warning: global var $shortName already exists")
@@ -135,12 +134,12 @@ class Lowering(private val moduleName: String) {
                 // Create a native global holding MT3Value* pointer to a string value
                 codegen.appendHeader("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
 
-                moduleInitializer.add(ExprFactory { v ->
-                    var r = "    ; Allocate int\n"
-                    r += "    %$v = tail call %MT3Value* @mt3_new_int(i64 ${expr.int})\n"
-                    r += emitInitializeGlobalVar(v, valueId)
-                    Pair(r, v + 1)
-                })
+                moduleInitializer.add { func ->
+                    val res = func.allocateSsaVariable()
+                    func.body.append("    ; Allocate int\n")
+                    func.body.append("    %$res = tail call %MT3Value* @mt3_new_int(i64 ${expr.int})\n")
+                    emitInitializeGlobalVar(func, res, valueId)
+                }
 
                 return emitLoadGlobalVar(valueId)
             }
@@ -157,12 +156,12 @@ class Lowering(private val moduleName: String) {
                 // Create a native global holding MT3Value* pointer to a string value
                 codegen.appendHeader("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
 
-                moduleInitializer.add(ExprFactory { v ->
-                    var r = "    ; Allocate string\n"
-                    r += "    %$v = tail call %MT3Value* @mt3_new_string(i8* getelementptr inbounds ([$lenWithNull x i8], [$lenWithNull x i8]* @$bytesId, i64 0, i64 0))\n"
-                    r += emitInitializeGlobalVar(v, valueId)
-                    Pair(r, v + 1)
-                })
+                moduleInitializer.add { func ->
+                    val res = func.allocateSsaVariable()
+                    func.body.append("    ; Allocate string\n")
+                    func.body.append("    %$res = tail call %MT3Value* @mt3_new_string(i8* getelementptr inbounds ([$lenWithNull x i8], [$lenWithNull x i8]* @$bytesId, i64 0, i64 0))\n")
+                    emitInitializeGlobalVar(func, res, valueId)
+                }
 
                 return emitLoadGlobalVar(valueId)
             }
@@ -190,12 +189,14 @@ class Lowering(private val moduleName: String) {
         }
     }
 
-    private fun emitInitializeGlobalVar(v: Int, globalId: String): String = """
-    |    ; Store allocated value to a native global variable
-    |    store %MT3Value* %$v, %MT3Value** @$globalId, align 8
-    |    ${emitRegisterGcRoot(v)}
-    |
-    """.trimMargin()
+    private fun emitInitializeGlobalVar(func: FunctionContext, what: Int, globalId: String) {
+        func.body.append("""
+            |    ; Store allocated value to a native global variable
+            |    store %MT3Value* %$what, %MT3Value** @$globalId, align 8
+            |
+            """.trimMargin())
+        emitRegisterGcRoot(func, what)
+    }
 
     private fun emitLoadGlobalVar(name: String): VisitExprResult {
         val ix = allocateSsaVariable()
@@ -230,7 +231,13 @@ class Lowering(private val moduleName: String) {
 
     private fun allocateNativeGlobalsIndex(): Int = moduleNativeGlobalsIndex++
 
-    private fun emitRegisterGcRoot(ix: Int): String = "tail call void @mt3_add_gc_root($MT3ValueErased %$ix)"
+    private fun emitRegisterGcRoot(func: FunctionContext, ix: Int) {
+        val casted = func.allocateSsaVariable()
+        func.body.append(
+            """|    %$casted = bitcast %MT3Value* %$ix to %GCObject*
+               |    tail call void @mt3_add_gc_root(%GCObject* %$casted)""".trimMargin()
+        )
+    }
 }
 
 // A call sequence is a native function that "calls" a MT3Function object. It checks that
