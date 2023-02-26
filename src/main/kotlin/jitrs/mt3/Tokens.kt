@@ -9,8 +9,7 @@ fun tokenize(s: String): Iterator<Token> = iterator {
         while (i < s.length && s[i].isWhitespace()) i++
 
         while (true) {
-            if (i >= s.length)
-                break
+            if (i >= s.length) break
 
             if (s[i].isWhitespace()) {
                 i++
@@ -20,8 +19,7 @@ fun tokenize(s: String): Iterator<Token> = iterator {
             // Skip comments
             if (i + 1 < s.length && s[i] == '-' && s[i + 1] == '-') {
                 i += 2
-                while (i < s.length && s[i] != '\n')
-                    i++
+                while (i < s.length && s[i] != '\n') i++
                 continue
             }
 
@@ -63,8 +61,7 @@ fun tokenize(s: String): Iterator<Token> = iterator {
                         i++
                     }
                 }
-                if (i == s.length)
-                    throw RuntimeException("Expected ending quote")
+                if (i == s.length) throw RuntimeException("Expected ending quote")
                 // Here s[i] == '"', skip it
                 i++
                 yield(Token(stringT, r.toString()))
@@ -115,8 +112,8 @@ val identT: TokenId = tokenIds.indexOf("<ident>")
 val stringT: TokenId = tokenIds.indexOf("<string>")
 
 //fun isIdentStart(c: Char): Boolean = c.isLetter() || c == '-'
-fun isIdentStart(c: Char): Boolean = isAsciiPrintable(c) && c != '(' && c != ')' && c != '"' && !c.isDigit()
-        && !c.isWhitespace()
+fun isIdentStart(c: Char): Boolean =
+    isAsciiPrintable(c) && c != '(' && c != ')' && c != '"' && !c.isDigit() && !c.isWhitespace()
 
 fun isIdentPart(c: Char): Boolean = isIdentStart(c) || c.isDigit()
 

@@ -9,6 +9,10 @@ class Codegen {
 
     val bodyCode = StringBuilder()
 
+    init {
+        bodyCode.ensureCapacity(10000)
+    }
+
     /**
      * Code produced during tree walking that may be put after [bodyCode].
      */

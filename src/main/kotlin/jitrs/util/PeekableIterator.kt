@@ -1,6 +1,6 @@
 package jitrs.util
 
-class PeekableIterator<T: Any>(private val iter: Iterator<T>) : Iterator<T> {
+class PeekableIterator<T : Any>(private val iter: Iterator<T>) : Iterator<T> {
     private var stashed: T? = null
 
     override fun hasNext(): Boolean = stashed != null || iter.hasNext()
@@ -19,6 +19,7 @@ class PeekableIterator<T: Any>(private val iter: Iterator<T>) : Iterator<T> {
             stashed = iter.next()
             stashed as T
         }
+
         else -> stashed as T
     }
 }

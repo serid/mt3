@@ -25,8 +25,8 @@ fun main(args: Array<String>) {
         |)
     """.trimMargin()
     val tokens = tokenize(src).asSequence().priceyToArray()
-    val sexprs = parseSExprs(PeekableIterator( tokens.iterator()))
-    val program = programfromSExprs(sexprs)
+    val sexprs = parseSExprs(PeekableIterator(tokens.iterator()))
+    val program = programFromSExprs(sexprs)
     val lir = Lowering("lemod").toLlvm(program)
 
     println(tokens.joinToString())
