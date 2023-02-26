@@ -16,3 +16,5 @@ declare %MT3Value* @mt3_new_function(i8, i8*)
 
 @mt3_stdlib_print = external global %MT3Value*, align 8
 @mt3_stdlib_plus = external global %MT3Value*, align 8
+
+@mt3_none_singleton = external global %MT3Value*, align 8

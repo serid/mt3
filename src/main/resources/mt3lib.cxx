@@ -9,15 +9,19 @@
 #include "util.h"
 #include "gc.hxx"
 
-static const u8 INT_TAG = 1;
-static const u8 ARRAY_TAG = 2;
-static const u8 STRING_TAG = 3;
-static const u8 FUNCTION_TAG = 4;
-static const u8 OBJECT_TAG = 5;
+static const u8 NONE_TAG = 1;
+static const u8 INT_TAG = 2;
+static const u8 ARRAY_TAG = 3;
+static const u8 STRING_TAG = 4;
+static const u8 FUNCTION_TAG = 5;
+static const u8 OBJECT_TAG = 6;
 struct MT3Value : public GCObject {
     u8 tag;
 
     MT3Value(u8 tag) : tag(tag) {}
+};
+struct MT3None : public MT3Value {
+    MT3None() : MT3Value(NONE_TAG) {}
 };
 struct MT3Int : public MT3Value {
     i64 value;
@@ -92,6 +96,8 @@ extern "C" MT3Value* mt3_new_function(u8 parameter_num, void* fun) {
     return gc_malloc<MT3Function>(parameter_num, fun);
 }
 
+extern "C" MT3Value* mt3_none_singleton = gc_malloc<MT3None>();
+
 /// Check that the value is an MT3Function, match its number of arguments and return its function pointer.
 extern "C" void* mt3_check_function_call(MT3Value* function, u8 arg_num) {
     if (function->tag != FUNCTION_TAG)
@@ -119,7 +125,7 @@ static MT3Value* mt3_print_impl(MT3Value* arg) {
     } else {
         panic("Unsupported types for builtin_print");
     }
-    return nullptr;
+    return mt3_none_singleton;
 }
 
 // operator+

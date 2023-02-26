@@ -89,7 +89,8 @@ class Lowering(private val moduleName: String) {
                     visitStmt(it)
                 }
 
-                codegen.appendBody("    ret $MT3ValueErased null\n")
+                val none = emitLoadNone().toCode()
+                codegen.appendBody("    ret $MT3ValueErased $none\n")
                 codegen.appendBody("}\n\n")
 
                 val valueId = if (toplevel.name == "main") "mt3_main" else longName
@@ -124,7 +125,7 @@ class Lowering(private val moduleName: String) {
     }
 
     /**
-     * @return index where result of this expression is stored. {null} if the expression does not produce an SSA value
+     * @return LLVM expression where result of this MT3 expression is stored
      */
     private fun visitExpr(expr: Expr): VisitExprResult {
         when (expr) {
@@ -202,6 +203,10 @@ class Lowering(private val moduleName: String) {
         val ix = allocateSsaVariable()
         codegen.appendBody("    %$ix = load %MT3Value*, %MT3Value** @$name, align 8\n")
         return VisitExprResult.SsaIndex(ix)
+    }
+
+    private fun emitLoadNone(): VisitExprResult {
+        return emitLoadGlobalVar("mt3_none_singleton")
     }
 
     sealed class VisitExprResult {
