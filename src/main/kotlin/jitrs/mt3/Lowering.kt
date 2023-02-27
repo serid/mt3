@@ -155,9 +155,11 @@ class Lowering(private val moduleName: String) {
         when (stmt) {
             is Stmt.VariableDefinition -> {
                 // Replace the MT3None with a value
-                val where = localVariables[stmt.name]
-                val what = visitExpr(stmt.initializer).toCode()
-                codegen.appendBody("    store %MT3Value* $what, %MT3Value** %$where, align 8\n")
+                emitAssignLocal(stmt.name, stmt.initializer)
+            }
+
+            is Stmt.Assignment -> {
+                emitAssignLocal(stmt.name, stmt.e)
             }
 
             is Stmt.ExprStmt -> {
@@ -258,6 +260,12 @@ class Lowering(private val moduleName: String) {
         }
     }
 
+    private fun emitAssignLocal(name: String, expr: Expr) {
+        val where = localVariables[name]!!
+        val what = visitExpr(expr).toCode()
+        emitAssignLocalVariable(currentFunctionContext, where, what)
+    }
+
     // TODO: resolve collisions with names containing "plus"
     private fun mangle(name: String): String {
         return name.replace("+", "plus")
@@ -292,7 +300,11 @@ private fun emitLoadGlobalVar(func: FunctionContext, name: String): Lowering.Vis
 
 private fun emitAllocaLocalVariable(func: FunctionContext, ssa: Int, initializer: String) {
     func.body.append("    %$ssa = alloca %MT3Value*, align 8\n")
-    func.body.append("    store %MT3Value* $initializer, %MT3Value** %$ssa, align 8\n")
+    emitAssignLocalVariable(func, ssa, initializer)
+}
+
+private fun emitAssignLocalVariable(func: FunctionContext, where: Int, what: String) {
+    func.body.append("    store %MT3Value* $what, %MT3Value** %$where, align 8\n")
 }
 
 private fun emitLoadNone(func: FunctionContext): Lowering.VisitExprResult {

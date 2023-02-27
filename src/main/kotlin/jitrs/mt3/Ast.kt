@@ -25,6 +25,9 @@ fun stmtFromSExpr(e: MT3SExpr): Stmt {
         "let" -> return Stmt.VariableDefinition(
             e.subexprs[1].cast<MT3Leaf>().token.getIdent(), exprFromSExpr(e.subexprs[2])
         )
+        "=" -> return Stmt.Assignment(
+            e.subexprs[1].cast<MT3Leaf>().token.getIdent(), exprFromSExpr(e.subexprs[2])
+        )
     }
 
     return Stmt.ExprStmt(exprFromSExpr(e))
@@ -58,6 +61,8 @@ sealed class Toplevel {
 sealed class Stmt {
     data class VariableDefinition(val name: String, val initializer: Expr) : Stmt()
 
+    data class Assignment(val name: String, val e: Expr) : Stmt()
+
     data class ExprStmt(val e: Expr) : Stmt()
 }
 
@@ -87,6 +92,8 @@ fun collectFunctionsVariables(
                 variableNames.add(stmt.name)
                 result.add(stmt)
             }
+
+            is Stmt.Assignment -> {}
 
             is Stmt.ExprStmt -> {}
         }
