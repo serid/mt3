@@ -9,17 +9,17 @@ import kotlin.io.path.absolutePathString
 import kotlin.io.path.exists
 import kotlin.io.path.getLastModifiedTime
 
-class Linker(val mode: Mode) {
+class Linker(private val mode: Mode) {
     private val cxxFlags = when (mode) {
         Mode.DEBUG -> arrayOf("-Os", "-fno-rtti", "-fno-exceptions", "-g")
-        Mode.NORMAL -> arrayOf("-Os", "-fno-rtti", "-fno-exceptions")
+        Mode.FAST_COMPILETIME -> arrayOf("-O0", "-fno-rtti", "-fno-exceptions", "-U", "_FORTIFY_SOURCE")
         Mode.LTO -> arrayOf()
     }
 
     // "-Os", "-static-libstdc++"
     private val linkerFlags: Array<String> = when (mode) {
         Mode.DEBUG -> arrayOf()
-        Mode.NORMAL -> arrayOf()
+        Mode.FAST_COMPILETIME -> arrayOf()
         Mode.LTO -> arrayOf()
     }
 
@@ -101,7 +101,7 @@ class Linker(val mode: Mode) {
     }
 
     enum class Mode {
-        DEBUG, NORMAL, LTO
+        DEBUG, FAST_COMPILETIME, LTO
     }
 }
 

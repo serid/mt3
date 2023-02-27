@@ -39,6 +39,6 @@ fun main(args: Array<String>) {
     Files.writeString(mt3MainLl, lir)
 
     val beforeLink = System.nanoTime()
-    Linker(Linker.Mode.DEBUG).link()
+    Linker(Linker.Mode.FAST_COMPILETIME).link()
     println("info: transpilation and linking took ${(System.nanoTime() - beforeLink) / 1_000_000} ms")
 }
