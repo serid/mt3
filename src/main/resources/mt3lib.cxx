@@ -10,11 +10,12 @@
 #include "gc.hxx"
 
 static const u8 NONE_TAG = 1;
-static const u8 INT_TAG = 2;
-static const u8 ARRAY_TAG = 3;
-static const u8 STRING_TAG = 4;
-static const u8 FUNCTION_TAG = 5;
-static const u8 OBJECT_TAG = 6;
+static const u8 BOOL_TAG = 2;
+static const u8 INT_TAG = 3;
+static const u8 ARRAY_TAG = 4;
+static const u8 STRING_TAG = 5;
+static const u8 FUNCTION_TAG = 6;
+static const u8 OBJECT_TAG = 7;
 struct MT3Value : public GCObject {
     u8 tag;
 
@@ -22,6 +23,11 @@ struct MT3Value : public GCObject {
 };
 struct MT3None : public MT3Value {
     MT3None() : MT3Value(NONE_TAG) {}
+};
+struct MT3Bool : public MT3Value {
+    // true and false are singletons, no need to store the value
+
+    MT3Bool() : MT3Value(BOOL_TAG) {}
 };
 struct MT3Int : public MT3Value {
     i64 value;
@@ -74,7 +80,7 @@ struct MT3Function : public MT3Value {
 
 [[noreturn]]
 static void panic(const char* message) {
-    printf("%s", message);
+    puts(message);
     exit(1);
 }
 
@@ -82,6 +88,14 @@ template<typename T, typename... Args>
 T* gc_malloc(Args... args) {
     return new T(args...);
 //     return static_cast<T*>(malloc(sizeof(T)));
+}
+
+extern "C" MT3Value* mt3_none_singleton = gc_malloc<MT3None>();
+extern "C" MT3Value* mt3_false_singleton = gc_malloc<MT3Bool>();
+extern "C" MT3Value* mt3_true_singleton = gc_malloc<MT3Bool>();
+
+extern "C" MT3Value* mt3_new_bool(bool x) {
+    return x ? mt3_true_singleton : mt3_false_singleton;
 }
 
 extern "C" MT3Value* mt3_new_int(i64 x) {
@@ -96,8 +110,6 @@ extern "C" MT3Value* mt3_new_function(u8 parameter_num, void* fun) {
     return gc_malloc<MT3Function>(parameter_num, fun);
 }
 
-extern "C" MT3Value* mt3_none_singleton = gc_malloc<MT3None>();
-
 /// Check that the value is an MT3Function, match its number of arguments and return its function pointer.
 extern "C" void* mt3_check_function_call(MT3Value* function, u8 arg_num) {
     if (function->tag != FUNCTION_TAG)
@@ -106,6 +118,16 @@ extern "C" void* mt3_check_function_call(MT3Value* function, u8 arg_num) {
     if (casted_function->parameter_num != arg_num)
         panic("wrong number of arguments");
     return reinterpret_cast<void*>(casted_function->fun);
+}
+
+extern "C" bool mt3_is_false(MT3Value* v) {
+    if (v->tag != BOOL_TAG)
+        panic("expected a bool");
+    return v == mt3_false_singleton;
+}
+
+extern "C" bool mt3_is_true(MT3Value* v) {
+    return !mt3_is_false(v);
 }
 
 /// This function will be reified in Codegen.kt
@@ -118,32 +140,49 @@ MT3Value* mt3_builtin_call2_example(MT3Value* function, MT3Value* arg1, MT3Value
 }
 
 static MT3Value* mt3_print_impl(MT3Value* arg) {
-    if (arg->tag == INT_TAG) {
+    if (arg->tag == BOOL_TAG) {
+        fputs(mt3_is_true(arg) ? "true" : "false", stdout);
+    } else if (arg->tag == INT_TAG) {
         printf("%lu", static_cast<MT3Int*>(arg)->value);
     } else if (arg->tag == STRING_TAG) {
-        printf("%s", static_cast<MT3String*>(arg)->data.data());
+        fputs(static_cast<MT3String*>(arg)->data.data(), stdout);
     } else {
         panic("Unsupported types for builtin_print");
     }
     return mt3_none_singleton;
 }
 
+// operator==
+static MT3Value* mt3_equality_impl(MT3Value* a, MT3Value* b) {
+    if (a->tag == BOOL_TAG && b->tag == BOOL_TAG) {
+        return mt3_new_bool(a == b);
+    } else if (a->tag == INT_TAG && b->tag == INT_TAG) {
+        bool eq = static_cast<MT3Int*>(a)->value == static_cast<MT3Int*>(b)->value;
+        return mt3_new_bool(eq);
+    } else if (a->tag == STRING_TAG && b->tag == STRING_TAG) {
+        bool eq = static_cast<MT3String*>(a)->data == static_cast<MT3String*>(b)->data;
+        return mt3_new_bool(eq);
+    }
+    panic("Unsupported types for builtin_equality");
+}
+
 // operator+
 static MT3Value* mt3_plus_impl(MT3Value* a, MT3Value* b) {
     if (a->tag == INT_TAG && b->tag == INT_TAG) {
         u64 sum = static_cast<MT3Int*>(a)->value + static_cast<MT3Int*>(b)->value;
-        return static_cast<MT3Value*>(mt3_new_int(sum));
+        return mt3_new_int(sum);
     } else if (a->tag == STRING_TAG && b->tag == STRING_TAG) {
         MT3String* result = gc_malloc<MT3String>("");
         result->data += static_cast<MT3String*>(a)->data;
         result->data += static_cast<MT3String*>(b)->data;
         return result;
     }
-    panic("Unsupported types for operator_plus");
+    panic("Unsupported types for builtin_plus");
 }
 
 // Here follow native global variables with MT3Value-wrappers around stdlib functions
 extern "C" MT3Value* mt3_stdlib_print = gc_malloc<MT3Function>(1, reinterpret_cast<void*>(mt3_print_impl));
+extern "C" MT3Value* mt3_stdlib_equality = gc_malloc<MT3Function>(2, reinterpret_cast<void*>(mt3_equality_impl));
 extern "C" MT3Value* mt3_stdlib_plus = gc_malloc<MT3Function>(2, reinterpret_cast<void*>(mt3_plus_impl));
 
 // extern "C" MT3Value* mt3_mt3lib_gc_roots[] = {mt3_print, mt3_plus};
@@ -151,6 +190,7 @@ extern "C" MT3Value* mt3_stdlib_plus = gc_malloc<MT3Function>(2, reinterpret_cas
 
 static void add_builtins_as_gc_roots() {
     mt3_add_gc_root(mt3_stdlib_print);
+    mt3_add_gc_root(mt3_stdlib_equality);
     mt3_add_gc_root(mt3_stdlib_plus);
 }
 
@@ -167,5 +207,5 @@ int main() {
     mt3_stdlib_init();
     mt3_mainmod_init();
 
-    mt3_builtin_call0(static_cast<MT3Value*>(mt3_main));
+    mt3_builtin_call0(mt3_main);
 }

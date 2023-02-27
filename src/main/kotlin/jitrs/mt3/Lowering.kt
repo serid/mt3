@@ -17,7 +17,12 @@ class Lowering(private val moduleName: String) {
 
     private val globalVars = hashMapOf(
         "print" to "mt3_stdlib_print",
-        "plus" to "mt3_stdlib_plus"
+        "equality" to "mt3_stdlib_equality",
+        "plus" to "mt3_stdlib_plus",
+
+        "none" to "mt3_none_singleton",
+        "false" to "mt3_false_singleton",
+        "true" to "mt3_true_singleton",
     )
 
     /**
@@ -268,7 +273,10 @@ class Lowering(private val moduleName: String) {
 
     // TODO: resolve collisions with names containing "plus"
     private fun mangle(name: String): String {
-        return name.replace("+", "plus")
+        var r = name
+        r = r.replace("+", "plus")
+        r = r.replace("==", "equality")
+        return r
     }
 
     private fun allocateNativeGlobalsIndex(): Int = moduleNativeGlobalsIndex++

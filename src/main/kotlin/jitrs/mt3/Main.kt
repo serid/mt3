@@ -22,7 +22,7 @@ fun main(args: Array<String>) {
         |    (let number (+ 1 2))
         |    (print "Test: ")
         |    (println number)
-        |    (= number (+ 5 (+ 5 5)))
+        |    (= number (== 5 (+ 5 5)))
         |    (println number)
         |)
     """.trimMargin()
