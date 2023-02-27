@@ -143,7 +143,7 @@ static MT3Value* mt3_print_impl(MT3Value* arg) {
     if (arg->tag == BOOL_TAG) {
         fputs(mt3_is_true(arg) ? "true" : "false", stdout);
     } else if (arg->tag == INT_TAG) {
-        printf("%lu", static_cast<MT3Int*>(arg)->value);
+        printf("%li", static_cast<MT3Int*>(arg)->value);
     } else if (arg->tag == STRING_TAG) {
         fputs(static_cast<MT3String*>(arg)->data.data(), stdout);
     } else {
@@ -169,7 +169,7 @@ static MT3Value* mt3_equality_impl(MT3Value* a, MT3Value* b) {
 // operator+
 static MT3Value* mt3_plus_impl(MT3Value* a, MT3Value* b) {
     if (a->tag == INT_TAG && b->tag == INT_TAG) {
-        u64 sum = static_cast<MT3Int*>(a)->value + static_cast<MT3Int*>(b)->value;
+        i64 sum = static_cast<MT3Int*>(a)->value + static_cast<MT3Int*>(b)->value;
         return mt3_new_int(sum);
     } else if (a->tag == STRING_TAG && b->tag == STRING_TAG) {
         MT3String* result = gc_malloc<MT3String>("");
@@ -180,10 +180,35 @@ static MT3Value* mt3_plus_impl(MT3Value* a, MT3Value* b) {
     panic("Unsupported types for builtin_plus");
 }
 
+// operator-*/
+template<auto f>
+MT3Value* generic_int_function(MT3Value* a, MT3Value* b, const char* error_message) {
+    if (a->tag == INT_TAG && b->tag == INT_TAG) {
+        i64 result = f(static_cast<MT3Int*>(a)->value, static_cast<MT3Int*>(b)->value);
+        return mt3_new_int(result);
+    }
+    panic(error_message);
+}
+
+static MT3Value* mt3_minus_impl(MT3Value* a, MT3Value* b) {
+    return generic_int_function<[](i64 x, i64 y) { return x - y; }>(a, b, "Unsupported types for builtin_minus");
+}
+
+static MT3Value* mt3_mul_impl(MT3Value* a, MT3Value* b) {
+    return generic_int_function<[](i64 x, i64 y) { return x * y; }>(a, b, "Unsupported types for builtin_mul");
+}
+
+static MT3Value* mt3_div_impl(MT3Value* a, MT3Value* b) {
+    return generic_int_function<[](i64 x, i64 y) { return x / y; }>(a, b, "Unsupported types for builtin_div");
+}
+
 // Here follow native global variables with MT3Value-wrappers around stdlib functions
 extern "C" MT3Value* mt3_stdlib_print = gc_malloc<MT3Function>(1, reinterpret_cast<void*>(mt3_print_impl));
 extern "C" MT3Value* mt3_stdlib_equality = gc_malloc<MT3Function>(2, reinterpret_cast<void*>(mt3_equality_impl));
 extern "C" MT3Value* mt3_stdlib_plus = gc_malloc<MT3Function>(2, reinterpret_cast<void*>(mt3_plus_impl));
+extern "C" MT3Value* mt3_stdlib_minus = gc_malloc<MT3Function>(2, reinterpret_cast<void*>(mt3_minus_impl));
+extern "C" MT3Value* mt3_stdlib_mul = gc_malloc<MT3Function>(2, reinterpret_cast<void*>(mt3_mul_impl));
+extern "C" MT3Value* mt3_stdlib_div = gc_malloc<MT3Function>(2, reinterpret_cast<void*>(mt3_div_impl));
 
 // extern "C" MT3Value* mt3_mt3lib_gc_roots[] = {mt3_print, mt3_plus};
 // extern "C" const size_t mt3_mt3lib_gc_roots_size = std::extent<decltype(mt3_mt3lib_gc_roots)>::value;
@@ -192,6 +217,9 @@ static void add_builtins_as_gc_roots() {
     mt3_add_gc_root(mt3_stdlib_print);
     mt3_add_gc_root(mt3_stdlib_equality);
     mt3_add_gc_root(mt3_stdlib_plus);
+    mt3_add_gc_root(mt3_stdlib_minus);
+    mt3_add_gc_root(mt3_stdlib_mul);
+    mt3_add_gc_root(mt3_stdlib_div);
 }
 
 static void mt3_stdlib_init() {

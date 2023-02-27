@@ -9,10 +9,18 @@ import kotlin.io.path.absolutePathString
 import kotlin.io.path.exists
 import kotlin.io.path.getLastModifiedTime
 
+private val sharedCxxFlags = arrayOf("-fno-rtti", "-fno-exceptions", "--std=c++20")
+
 class Linker(private val mode: Mode) {
     private val cxxFlags = when (mode) {
-        Mode.DEBUG -> arrayOf("-Os", "-fno-rtti", "-fno-exceptions", "-g")
-        Mode.FAST_COMPILETIME -> arrayOf("-O0", "-fno-rtti", "-fno-exceptions", "-U", "_FORTIFY_SOURCE")
+        Mode.DEBUG -> arrayOf(*sharedCxxFlags, "-Os", "-g")
+        Mode.FAST_COMPILETIME -> arrayOf(*sharedCxxFlags, "-O0", "-U", "_FORTIFY_SOURCE")
+        Mode.LTO -> arrayOf()
+    }
+
+    private val llcFlags: Array<String> = when (mode) {
+        Mode.DEBUG -> arrayOf("--cost-kind=code-size")
+        Mode.FAST_COMPILETIME -> arrayOf()
         Mode.LTO -> arrayOf()
     }
 
@@ -30,7 +38,7 @@ class Linker(private val mode: Mode) {
             startProcessWithStdout(
                 "llc",
                 "--filetype=obj",
-                "--cost-kind=code-size",
+                *llcFlags,
                 mt3MainLl.absolutePathString(),
                 "-o",
                 mt3MainO.absolutePathString(),

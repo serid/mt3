@@ -19,6 +19,9 @@ class Lowering(private val moduleName: String) {
         "print" to "mt3_stdlib_print",
         "equality" to "mt3_stdlib_equality",
         "plus" to "mt3_stdlib_plus",
+        "minus" to "mt3_stdlib_minus",
+        "mul" to "mt3_stdlib_mul",
+        "div" to "mt3_stdlib_div",
 
         "none" to "mt3_none_singleton",
         "false" to "mt3_false_singleton",
@@ -274,8 +277,11 @@ class Lowering(private val moduleName: String) {
     // TODO: resolve collisions with names containing "plus"
     private fun mangle(name: String): String {
         var r = name
-        r = r.replace("+", "plus")
         r = r.replace("==", "equality")
+        r = r.replace("+", "plus")
+        r = r.replace("-", "minus")
+        r = r.replace("*", "mul")
+        r = r.replace("/", "div")
         return r
     }
 
