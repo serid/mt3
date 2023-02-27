@@ -107,14 +107,15 @@ class Lowering(private val moduleName: String) {
                     emitAllocaLocalVariable(currentFunctionContext, ssa, "%$index")
                 }
 
+                val none = emitLoadNone(currentFunctionContext).toCode()
+
                 // Add local variables as local variables
                 val declarations = collectFunctionsVariables(toplevel, HashSet(localVariables.keys))
                 declarations.forEach { def ->
-                    val noneSsa = emitLoadNone(currentFunctionContext).toCode()
                     val ssa = currentFunctionContext.allocateSsaVariable()
                     if (localVariables.put(def.name, ssa) != null)
                         throw RuntimeException("error: local var ${def.name} already exists")
-                    emitAllocaLocalVariable(currentFunctionContext, ssa, noneSsa)
+                    emitAllocaLocalVariable(currentFunctionContext, ssa, none)
                 }
 
                 // idk
@@ -124,7 +125,6 @@ class Lowering(private val moduleName: String) {
                     visitStmt(it)
                 }
 
-                val none = emitLoadNone(currentFunctionContext).toCode()
                 codegen.appendBody("    ret $MT3ValueErased $none\n")
                 codegen.appendBody("}\n\n")
 
