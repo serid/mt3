@@ -12,17 +12,38 @@ fun main(args: Array<String>) {
     println("Program arguments: ${args.joinToString()}")
 
     val src = """
+        |(fun fibonacci (n)
+        |    (if (== n 0) (return 0))
+        |    (if (== n 1) (return 1))
+        |    (return (+
+        |        (fibonacci (- n 1))
+        |        (fibonacci (- n 2))
+        |    ))
+        |)
+        |
+        |(fun print-numbers (num)
+        |    (let i 0)
+        |    (while true
+        |        (print (+ (fibonacci i) " "))
+        |        (= i (+ i 1))
+        |        (if (== i num) (return none))
+        |    )
+        |)
+        |
         |(fun println (s)
         |    (print s)
         |    (print "\n")
         |)
         |
         |(fun main ()
-        |    (println "Doge")
+        |    (print "Here are 10 fibonacci numbers: ")
+        |    (print-numbers 10)
+        |    (println "")
+        |    
         |    (let number (+ 1 2))
         |    (print "Test: ")
         |    (println number)
-        |    (= number (- 5 (* 5 5)))
+        |    (= number (* 2 4))
         |    (println number)
         |    (println (+ "result: " (fibonacci number)))
         |)

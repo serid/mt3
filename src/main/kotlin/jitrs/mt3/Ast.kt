@@ -25,9 +25,22 @@ fun stmtFromSExpr(e: MT3SExpr): Stmt {
         "let" -> return Stmt.VariableDefinition(
             e.subexprs[1].cast<MT3Leaf>().token.getIdent(), exprFromSExpr(e.subexprs[2])
         )
+
         "=" -> return Stmt.Assignment(
             e.subexprs[1].cast<MT3Leaf>().token.getIdent(), exprFromSExpr(e.subexprs[2])
         )
+
+        "if" -> return Stmt.If(
+            exprFromSExpr(e.subexprs[1]),
+            e.subexprs.asSequence().drop(2).map(::stmtFromSExpr).priceyToArray()
+        )
+
+        "while" -> return Stmt.While(
+            exprFromSExpr(e.subexprs[1]),
+            e.subexprs.asSequence().drop(2).map(::stmtFromSExpr).priceyToArray()
+        )
+
+        "return" -> return Stmt.Return(exprFromSExpr(e.subexprs[1]))
     }
 
     return Stmt.ExprStmt(exprFromSExpr(e))
@@ -63,6 +76,12 @@ sealed class Stmt {
 
     data class Assignment(val name: String, val e: Expr) : Stmt()
 
+    data class If(val cond: Expr, val body: Array<Stmt>) : Stmt()
+
+    data class While(val cond: Expr, val body: Array<Stmt>) : Stmt()
+
+    data class Return(val value: Expr) : Stmt()
+
     data class ExprStmt(val e: Expr) : Stmt()
 }
 
@@ -84,7 +103,6 @@ fun collectFunctionsVariables(
     @Suppress("UnnecessaryVariable") val variableNames = preDeclaredVariables
     val result = ArrayList<Stmt.VariableDefinition>()
 
-    // NB: this function might become recursive in the future, don't inline it into the loop
     fun visit(stmt: Stmt) {
         when (stmt) {
             is Stmt.VariableDefinition -> {
@@ -94,6 +112,20 @@ fun collectFunctionsVariables(
             }
 
             is Stmt.Assignment -> {}
+
+            is Stmt.If -> {
+                stmt.body.forEach {
+                    visit(it)
+                }
+            }
+
+            is Stmt.While -> {
+                stmt.body.forEach {
+                    visit(it)
+                }
+            }
+
+            is Stmt.Return -> {}
 
             is Stmt.ExprStmt -> {}
         }
