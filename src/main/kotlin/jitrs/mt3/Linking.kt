@@ -58,8 +58,8 @@ class Linker(private val mode: Mode) {
                 "clang++",
                 mt3LibCxx.absolutePathString(),
                 mt3MainLl.absolutePathString(),
-                "-O2", "-fno-rtti", "-fno-exceptions",
-                "-static-libstdc++", "-flto",
+                *sharedCxxFlags,
+                "-O2", "-static-libstdc++", "-flto",
                 "-o", "./workdir/out"
             )
         }
