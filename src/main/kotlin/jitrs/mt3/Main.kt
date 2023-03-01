@@ -1,15 +1,14 @@
 package jitrs.mt3
 
+import jitrs.mt3.linking.Linker
 import jitrs.util.PeekableIterator
+import jitrs.util.logTime
 import jitrs.util.priceyToArray
 import java.nio.file.Files
+import java.nio.file.Path
 
-fun main(args: Array<String>) {
+fun main() {
     println("Hello World!")
-
-    // Try adding program arguments via Run/Debug configuration.
-    // Learn more about running applications: https://www.jetbrains.com/help/idea/running-applications.html.
-    println("Program arguments: ${args.joinToString()}")
 
     val src = """
         |(fun fibonacci (n)
@@ -57,9 +56,15 @@ fun main(args: Array<String>) {
     println(program)
 //    println(lir)
 
+    val mt3MainLl = Files.createTempFile("mainmod-llvm-ir", ".ll")
+    val mt3MainO = Files.createTempFile("mainmod-obj", ".o")
+
     Files.writeString(mt3MainLl, lir)
 
-    val beforeLink = System.nanoTime()
-    Linker(Linker.Mode.FAST_COMPILETIME).link()
-    println("info: transpilation and linking took ${(System.nanoTime() - beforeLink) / 1_000_000} ms")
+    logTime("info: transpilation and linking took") {
+        Linker(Linker.Mode.FAST_COMPILETIME, mt3MainLl, mt3MainO, Path.of("./workdir/out")).link()
+    }
+
+//    Files.delete(mt3MainLl)
+//    Files.delete(mt3MainO)
 }

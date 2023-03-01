@@ -13,6 +13,17 @@ fun myAssert(b: Boolean) {
         throw RuntimeException("assertion failed")
 }
 
+fun myAssertEqual(a: Any, b: Any) {
+    if (a != b)
+        throw RuntimeException("equality assertion failed: '$a' and '$b'")
+}
+
 fun countFrom(from: Int): Sequence<Int> = generateSequence(from) { it + 1 }
+
+inline fun logTime(msg: String, f: () -> Unit) {
+    val before = System.nanoTime()
+    f()
+    println("$msg ${(System.nanoTime() - before) / 1_000_000} ms")
+}
 
 //fun StringBuilder.appendIndentedLine(s: String): StringBuilder = this.appendLine("    $s")
