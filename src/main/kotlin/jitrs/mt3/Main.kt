@@ -24,6 +24,7 @@ fun main(args: Array<String>) {
         |    (println number)
         |    (= number (- 5 (* 5 5)))
         |    (println number)
+        |    (println (+ "result: " (fibonacci number)))
         |)
     """.trimMargin()
     val tokens = tokenize(src).asSequence().priceyToArray()

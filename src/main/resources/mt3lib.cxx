@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <vector>
 #include <string>
+//#include <utility>
 #include <type_traits>
 
 #include "util.h"
@@ -50,6 +51,8 @@ struct MT3String : public MT3Value {
     std::string data;
 
     MT3String(std::string&& data) : MT3Value(STRING_TAG), data(data) {}
+
+    MT3String(std::string& data) : MT3Value(STRING_TAG), data(data) {}
 };
 struct MT3Function : public MT3Value {
     // this function pointer has type like (MT3Value* fun(MT3Value*, MT3Value*)).
@@ -152,6 +155,17 @@ static MT3Value* mt3_print_impl(MT3Value* arg) {
     return mt3_none_singleton;
 }
 
+static MT3Value* mt3_to_string_impl(MT3Value* arg) {
+    if (arg->tag == BOOL_TAG) {
+        return gc_malloc<MT3String>(mt3_is_true(arg) ? "true" : "false");
+    } else if (arg->tag == INT_TAG) {
+        return gc_malloc<MT3String>(std::to_string(static_cast<MT3Int*>(arg)->value));
+    } else if (arg->tag == STRING_TAG) {
+        return arg;
+    }
+    panic("Unsupported types for builtin_to_string");
+}
+
 // operator==
 static MT3Value* mt3_equality_impl(MT3Value* a, MT3Value* b) {
     if (a->tag == BOOL_TAG && b->tag == BOOL_TAG) {
@@ -171,10 +185,11 @@ static MT3Value* mt3_plus_impl(MT3Value* a, MT3Value* b) {
     if (a->tag == INT_TAG && b->tag == INT_TAG) {
         i64 sum = static_cast<MT3Int*>(a)->value + static_cast<MT3Int*>(b)->value;
         return mt3_new_int(sum);
-    } else if (a->tag == STRING_TAG && b->tag == STRING_TAG) {
+    } else if (a->tag == STRING_TAG || b->tag == STRING_TAG) {
+        // If one of the arguments is a string, convert both to string and concatenate
         MT3String* result = gc_malloc<MT3String>("");
-        result->data += static_cast<MT3String*>(a)->data;
-        result->data += static_cast<MT3String*>(b)->data;
+        result->data += static_cast<MT3String*>(mt3_to_string_impl(a))->data;
+        result->data += static_cast<MT3String*>(mt3_to_string_impl(b))->data;
         return result;
     }
     panic("Unsupported types for builtin_plus");
