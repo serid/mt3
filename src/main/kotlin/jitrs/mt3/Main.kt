@@ -23,10 +23,9 @@ fun main(args: Array<String>) {
         |
         |(fun print-numbers (num)
         |    (let i 0)
-        |    (while true
+        |    (while (< i num)
         |        (print (+ (fibonacci i) " "))
         |        (= i (+ i 1))
-        |        (if (== i num) (return none))
         |    )
         |)
         |

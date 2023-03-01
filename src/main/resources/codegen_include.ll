@@ -21,9 +21,15 @@ declare i8* @mt3_check_function_call(%MT3Value*, i8)
 declare i1 @mt3_is_false(%MT3Value*)
 declare i1 @mt3_is_true(%MT3Value*)
 
+@mt3_stdlib_logical_not = external global %MT3Value*, align 8
 @mt3_stdlib_print = external global %MT3Value*, align 8
 @mt3_stdlib_equality = external global %MT3Value*, align 8
+@mt3_stdlib_inequality = external global %MT3Value*, align 8
 @mt3_stdlib_plus = external global %MT3Value*, align 8
 @mt3_stdlib_minus = external global %MT3Value*, align 8
 @mt3_stdlib_mul = external global %MT3Value*, align 8
 @mt3_stdlib_div = external global %MT3Value*, align 8
+@mt3_stdlib_less = external global %MT3Value*, align 8
+@mt3_stdlib_lax_less = external global %MT3Value*, align 8
+@mt3_stdlib_greater = external global %MT3Value*, align 8
+@mt3_stdlib_lax_greater = external global %MT3Value*, align 8

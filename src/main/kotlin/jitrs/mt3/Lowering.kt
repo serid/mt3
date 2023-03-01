@@ -18,12 +18,18 @@ class Lowering(private val moduleName: String) {
     private val codegen = Codegen()
 
     private val globalVars = hashMapOf(
+        "logical_not" to "mt3_stdlib_logical_not",
         "print" to "mt3_stdlib_print",
         "equality" to "mt3_stdlib_equality",
+        "inequality" to "mt3_stdlib_inequality",
         "plus" to "mt3_stdlib_plus",
         "minus" to "mt3_stdlib_minus",
         "mul" to "mt3_stdlib_mul",
         "div" to "mt3_stdlib_div",
+        "less" to "mt3_stdlib_less",
+        "lax_less" to "mt3_stdlib_lax_less",
+        "greater" to "mt3_stdlib_greater",
+        "lax_greater" to "mt3_stdlib_lax_greater",
 
         "none" to "mt3_none_singleton",
         "false" to "mt3_false_singleton",
@@ -376,10 +382,17 @@ class Lowering(private val moduleName: String) {
     private fun mangle(name: String): String {
         var r = name
         r = r.replace("==", "equality")
+        r = r.replace("!=", "inequality")
         r = r.replace("+", "plus")
         r = r.replace("-", "minus")
         r = r.replace("*", "mul")
         r = r.replace("/", "div")
+        r = r.replace("<", "less")
+        r = r.replace("<=", "lax_less")
+        r = r.replace(">", "greater")
+        r = r.replace(">=", "lax_greater")
+
+        r = r.replace("!", "logical_not")
         return r
     }
 
