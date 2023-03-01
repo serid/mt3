@@ -6,6 +6,8 @@ inline fun <reified T> Any.cast(): T = this as T
 
 inline fun <reified T> Sequence<T>.priceyToArray(): Array<T> = this.toList().toTypedArray()
 
+inline fun <T> doHere(f: () -> T): T = f()
+
 fun myAssert(b: Boolean) {
     if (!b)
         throw RuntimeException("assertion failed")
