@@ -63,7 +63,7 @@ class Lowering(private val moduleName: String) {
     }
 
     private fun visitProgram(program: Program) {
-        codegen.appendHeader(
+        codegen.headerCode.append(
             """
             |; <codegen_include.ll>
             |${Files.readString(Path.of("./src/main/resources/codegen_include.ll"))}
@@ -173,7 +173,7 @@ class Lowering(private val moduleName: String) {
 
                 val funPtrTypeList = countFrom(1).take(arity).map { "%MT3Value*" }.joinToString()
 
-                codegen.appendHeader("@$valueId = $modifier global %MT3Value* null, align 8\n")
+                codegen.headerCode.append("@$valueId = $modifier global %MT3Value* null, align 8\n")
 
                 moduleInitializer.add { block ->
                     val casted = block.func.allocateSsaVariable()
@@ -289,7 +289,7 @@ class Lowering(private val moduleName: String) {
                 val valueId = "mt3_intV${allocateNativeGlobalsIndex()}"
 
                 // Create a native global holding MT3Value* pointer to a string value
-                codegen.appendHeader("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
+                codegen.headerCode.append("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
 
                 moduleInitializer.add { block2 ->
                     val res = block2.func.allocateSsaVariable()
@@ -308,10 +308,10 @@ class Lowering(private val moduleName: String) {
                 val valueId = "mt3_strV$id"
 
                 // Create a native global holding bytes of this string literal
-                codegen.appendHeader("@$bytesId = private unnamed_addr constant [$lenWithNull x i8] c\"${expr.string}\\00\", align 1\n")
+                codegen.headerCode.append("@$bytesId = private unnamed_addr constant [$lenWithNull x i8] c\"${expr.string}\\00\", align 1\n")
 
                 // Create a native global holding MT3Value* pointer to a string value
-                codegen.appendHeader("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
+                codegen.headerCode.append("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
 
                 moduleInitializer.add { block2 ->
                     val res = block2.func.allocateSsaVariable()

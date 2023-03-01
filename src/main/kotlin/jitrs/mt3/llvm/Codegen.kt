@@ -7,28 +7,12 @@ class Codegen {
      */
     val headerCode = StringBuilder()
 
-    val bodyCode = StringBuilder()
-
-    init {
-        bodyCode.ensureCapacity(10000)
-    }
+    val bodyCode = StringBuilder().apply { ensureCapacity(10000) }
 
     /**
      * Code produced during tree walking that may be put after [bodyCode].
      */
     val footerCode = StringBuilder()
-
-    fun appendHeader(s: String) {
-        headerCode.append(s)
-    }
-
-    fun appendBody(s: String) {
-        bodyCode.append(s)
-    }
-
-    fun appendFooter(s: String) {
-        footerCode.append(s)
-    }
 
     init {
         headerCode.append("; <HEADER>\n")
@@ -41,8 +25,8 @@ class Codegen {
         bodyCode.append("; </ BODY>\n\n")
         footerCode.append("; </ FOOTER>\n")
 
-        headerCode.append(bodyCode.toString())
-        headerCode.append(footerCode.toString())
+        headerCode.append(bodyCode)
+        headerCode.append(footerCode)
         return headerCode.toString()
     }
 }
