@@ -1,8 +1,5 @@
-import jitrs.mt3.Lowering
+import jitrs.mt3.*
 import jitrs.mt3.linking.Linker
-import jitrs.mt3.parseSExprs
-import jitrs.mt3.programFromSExprs
-import jitrs.mt3.tokenize
 import jitrs.util.*
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
@@ -77,7 +74,7 @@ private fun execMt3(src: String): String {
     val tokens = tokenize(src).asSequence().priceyToArray()
     val sexprs = parseSExprs(PeekableIterator(tokens.iterator()))
     val program = programFromSExprs(sexprs)
-    val lir = Lowering("lemod").toLlvm(program)
+    val lir = ProgramLowering("lemod").toLlvm(program)
 
     val mt3MainLl = Files.createTempFile("mainmod-llvm-ir", ".ll")
     val mt3MainO = Files.createTempFile("mainmod-obj", ".o")

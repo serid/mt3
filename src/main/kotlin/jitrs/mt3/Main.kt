@@ -49,7 +49,7 @@ fun main() {
     val tokens = tokenize(src).asSequence().priceyToArray()
     val sexprs = parseSExprs(PeekableIterator(tokens.iterator()))
     val program = programFromSExprs(sexprs)
-    val lir = Lowering("lemod").toLlvm(program)
+    val lir = ProgramLowering("lemod").toLlvm(program)
 
     println(tokens.joinToString())
     println(sexprs.joinToString())
