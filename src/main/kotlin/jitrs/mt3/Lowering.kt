@@ -1,8 +1,8 @@
 package jitrs.mt3
 
-import jitrs.mt3.llvm.BlockContext
+import jitrs.mt3.llvm.Block
 import jitrs.mt3.llvm.Codegen
-import jitrs.mt3.llvm.FunctionContext
+import jitrs.mt3.llvm.Function
 import jitrs.util.countFrom
 import java.nio.file.Files
 import java.nio.file.Path
@@ -48,7 +48,7 @@ class Lowering(private val moduleName: String) {
     /**
      * When compiling a function, we don't know what id the final block will have so we add jumps to it later.
      */
-    private val blocksToFinalizeWithReturn = ArrayList<BlockContext>()
+    private val blocksToFinalizeWithReturn = ArrayList<Block>()
 
     /**
      * Codegen will reify call sequences with arities from this set.
@@ -56,7 +56,7 @@ class Lowering(private val moduleName: String) {
      */
     private val callSequencesToGenerate = TreeSet(arrayListOf(0))
 
-    private val moduleInitializer = ArrayList<(block: BlockContext) -> Unit>()
+    private val moduleInitializer = ArrayList<(block: Block) -> Unit>()
 
     fun toLlvm(program: Program): String {
         visitProgram(program)
@@ -82,7 +82,7 @@ class Lowering(private val moduleName: String) {
         }
 
         // Emit module initializer
-        val initializer = FunctionContext("void", "mt3_mainmod_init", "", 0)
+        val initializer = Function("void", "mt3_mainmod_init", "", 0)
         val bloc = initializer.newBlock()
         moduleInitializer.forEach {
             it(bloc)
@@ -115,7 +115,7 @@ class Lowering(private val moduleName: String) {
                 val generatedParameters = countFrom(0).take(arity).map { "%MT3Value* %$it" }.joinToString()
 
                 // Skip ssa-s already used for generatedParameters
-                val cfc = FunctionContext(MT3ValueErased, codeName, generatedParameters, arity)
+                val cfc = Function(MT3ValueErased, codeName, generatedParameters, arity)
                 localVariables.clear()
                 blocksToFinalizeWithReturn.clear()
 
@@ -150,7 +150,7 @@ class Lowering(private val moduleName: String) {
                 // idk
 //                allocateSsaVariable()
 
-                var currentBlock: BlockContext? = entryBlock
+                var currentBlock: Block? = entryBlock
 
                 for (it in toplevel.body) {
                     currentBlock = visitStmt(currentBlock!!, it)
@@ -194,7 +194,7 @@ class Lowering(private val moduleName: String) {
     }
 
     @Suppress("UnnecessaryVariable")
-    private fun visitStmt(block: BlockContext, stmt: Stmt): BlockContext? {
+    private fun visitStmt(block: Block, stmt: Stmt): Block? {
         when (stmt) {
             is Stmt.VariableDefinition -> {
                 // Replace the MT3None with a value
@@ -214,7 +214,7 @@ class Lowering(private val moduleName: String) {
                 ifBlock.body.append("%$condition = tail call i1 @mt3_is_true(%MT3Value* $arg)\n")
 
                 val onTrueEntry = block.func.newBlock()
-                var onTrue: BlockContext? = onTrueEntry
+                var onTrue: Block? = onTrueEntry
 
                 for (it in stmt.body) {
                     onTrue = visitStmt(onTrue!!, it)
@@ -246,7 +246,7 @@ class Lowering(private val moduleName: String) {
                 headerBlock.body.append("%$condition = tail call i1 @mt3_is_true(%MT3Value* $arg)\n")
 
                 val loopEntry = block.func.newBlock()
-                var loop: BlockContext? = loopEntry
+                var loop: Block? = loopEntry
 
                 for (it in stmt.body) {
                     loop = visitStmt(loop!!, it)
@@ -285,7 +285,7 @@ class Lowering(private val moduleName: String) {
     /**
      * @return LLVM expression where result of this MT3 expression is stored
      */
-    private fun visitExpr(block: BlockContext, expr: Expr): VisitExprResult {
+    private fun visitExpr(block: Block, expr: Expr): VisitExprResult {
         when (expr) {
             is Expr.IntConst -> {
                 val valueId = "mt3_intV${allocateNativeGlobalsIndex()}"
@@ -374,7 +374,7 @@ class Lowering(private val moduleName: String) {
         }
     }
 
-    private fun emitAssignLocal(block: BlockContext, name: String, expr: Expr) {
+    private fun emitAssignLocal(block: Block, name: String, expr: Expr) {
         val where = localVariables[name]!!
         val what = visitExpr(block, expr).toCode()
         emitAssignLocalVariable(block, where, what)
@@ -401,7 +401,7 @@ class Lowering(private val moduleName: String) {
     private fun allocateNativeGlobalsIndex(): Int = moduleNativeGlobalsIndex++
 }
 
-private fun emitInitializeGlobalVar(block: BlockContext, what: Int, globalId: String) {
+private fun emitInitializeGlobalVar(block: Block, what: Int, globalId: String) {
     block.body.append(
         """|    ; Store allocated value to a native global variable
            |    store %MT3Value* %$what, %MT3Value** @$globalId, align 8
@@ -411,7 +411,7 @@ private fun emitInitializeGlobalVar(block: BlockContext, what: Int, globalId: St
     emitRegisterGcRoot(block, what)
 }
 
-private fun emitRegisterGcRoot(block: BlockContext, ix: Int) {
+private fun emitRegisterGcRoot(block: Block, ix: Int) {
     val casted = block.func.allocateSsaVariable()
     block.body.append(
         """|    %$casted = bitcast %MT3Value* %$ix to %GCObject*
@@ -419,28 +419,28 @@ private fun emitRegisterGcRoot(block: BlockContext, ix: Int) {
     )
 }
 
-private fun emitLoadGlobalVar(block: BlockContext, name: String): Lowering.VisitExprResult {
+private fun emitLoadGlobalVar(block: Block, name: String): Lowering.VisitExprResult {
     val ssa = block.func.allocateSsaVariable()
     block.body.append("    %$ssa = load %MT3Value*, %MT3Value** @$name, align 8\n")
     return Lowering.VisitExprResult.SsaIndex(ssa)
 }
 
-private fun emitAllocaLocalVariable(block: BlockContext, ssa: Int, initializer: String) {
+private fun emitAllocaLocalVariable(block: Block, ssa: Int, initializer: String) {
     block.body.append("    %$ssa = alloca %MT3Value*, align 8\n")
     emitAssignLocalVariable(block, ssa, initializer)
 }
 
-private fun emitAssignLocalVariable(block: BlockContext, where: Int, what: String) {
+private fun emitAssignLocalVariable(block: Block, where: Int, what: String) {
     block.body.append("    store %MT3Value* $what, %MT3Value** %$where, align 8\n")
 }
 
-private fun emitLoadLocalVariable(block: BlockContext, where: Int): Lowering.VisitExprResult {
+private fun emitLoadLocalVariable(block: Block, where: Int): Lowering.VisitExprResult {
     val ssa = block.func.allocateSsaVariable()
     block.body.append("    %$ssa = load %MT3Value*, %MT3Value** %$where, align 8\n")
     return Lowering.VisitExprResult.SsaIndex(ssa)
 }
 
-private fun emitLoadNone(block: BlockContext): Lowering.VisitExprResult {
+private fun emitLoadNone(block: Block): Lowering.VisitExprResult {
     return emitLoadGlobalVar(block, "mt3_stdlib_none")
 }
 

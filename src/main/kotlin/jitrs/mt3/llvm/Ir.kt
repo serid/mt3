@@ -1,14 +1,14 @@
 package jitrs.mt3.llvm
 
-class FunctionContext(type: String, name: String, parameters: String, nOfParameters: Int) {
+class Function(type: String, name: String, parameters: String, nOfParameters: Int) {
     private val header = "define $type @$name($parameters) {\n"
     private var freeSsa: Int = nOfParameters
-    private val blocks = ArrayList<BlockContext>()
+    private val blocks = ArrayList<Block>()
 
     fun allocateSsaVariable(): Int = freeSsa++
 
-    fun newBlock(): BlockContext {
-        val r = BlockContext(this, this.allocateSsaVariable())
+    fun newBlock(): Block {
+        val r = Block(this, this.allocateSsaVariable())
         blocks.add(r)
         return r
     }
@@ -22,8 +22,8 @@ class FunctionContext(type: String, name: String, parameters: String, nOfParamet
     }
 }
 
-class BlockContext(
-    val func: FunctionContext,
+class Block(
+    val func: Function,
     private val id: Int
 ) {
     val body = StringBuilder()
@@ -36,12 +36,12 @@ class BlockContext(
         finalize1()
     }
 
-    fun finalizeWithUnconditional(onEnd: BlockContext) {
+    fun finalizeWithUnconditional(onEnd: Block) {
         body.append("    br label %${onEnd.id}\n")
         finalize1()
     }
 
-    fun finalizeWithConditional(condition: String, onTrue: BlockContext, onFalse: BlockContext) {
+    fun finalizeWithConditional(condition: String, onTrue: Block, onFalse: Block) {
         body.append("    br i1 $condition, label %${onTrue.id}, label %${onFalse.id}\n")
         finalize1()
     }
