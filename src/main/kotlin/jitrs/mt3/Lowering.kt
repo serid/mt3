@@ -17,24 +17,26 @@ import java.util.*
 class Lowering(private val moduleName: String) {
     private val codegen = Codegen()
 
-    private val globalVars = hashMapOf(
-        "logical_not" to "mt3_stdlib_logical_not",
-        "print" to "mt3_stdlib_print",
-        "equality" to "mt3_stdlib_equality",
-        "inequality" to "mt3_stdlib_inequality",
-        "plus" to "mt3_stdlib_plus",
-        "minus" to "mt3_stdlib_minus",
-        "mul" to "mt3_stdlib_mul",
-        "div" to "mt3_stdlib_div",
-        "less" to "mt3_stdlib_less",
-        "lax_less" to "mt3_stdlib_lax_less",
-        "greater" to "mt3_stdlib_greater",
-        "lax_greater" to "mt3_stdlib_lax_greater",
+    private val stdlibGlobalVars = arrayOf(
+        "logical_not",
+        "print",
+        "equality",
+        "inequality",
+        "plus",
+        "minus",
+        "mul",
+        "div",
+        "less",
+        "lax_less",
+        "greater",
+        "lax_greater",
 
-        "none" to "mt3_none_singleton",
-        "false" to "mt3_false_singleton",
-        "true" to "mt3_true_singleton",
+        "none",
+        "false",
+        "true"
     )
+
+    private val globalVars = hashMapOf(*stdlibGlobalVars.map { it to "mt3_stdlib_$it" }.toTypedArray())
 
     /**
      * When traversing a module, index of the current free native global variable where a string literal can be allocated.
@@ -71,6 +73,9 @@ class Lowering(private val moduleName: String) {
             |
         """.trimMargin()
         )
+        globalVars.forEach { (_, longName) ->
+            codegen.headerCode.append("@$longName = external global %MT3Value*, align 8\n")
+        }
 
         program.toplevels.forEach {
             visitToplevel(it)
@@ -184,9 +189,6 @@ class Lowering(private val moduleName: String) {
                         .append("    %$res = tail call %MT3Value* @mt3_new_function(i8 ${toplevel.arity()}, i8* %$casted)\n")
                     emitInitializeGlobalVar(block, res, valueId)
                 }
-
-                if (globalVars.put(shortName, longName) != null)
-                    println("warning: global var $shortName already exists")
             }
         }
     }
@@ -439,7 +441,7 @@ private fun emitLoadLocalVariable(block: BlockContext, where: Int): Lowering.Vis
 }
 
 private fun emitLoadNone(block: BlockContext): Lowering.VisitExprResult {
-    return emitLoadGlobalVar(block, "mt3_none_singleton")
+    return emitLoadGlobalVar(block, "mt3_stdlib_none")
 }
 
 // A call sequence is a native function that "calls" a MT3Function object. It checks that

@@ -93,12 +93,12 @@ T* gc_malloc(Args... args) {
 //     return static_cast<T*>(malloc(sizeof(T)));
 }
 
-extern "C" MT3Value* mt3_none_singleton = gc_malloc<MT3None>();
-extern "C" MT3Value* mt3_false_singleton = gc_malloc<MT3Bool>();
-extern "C" MT3Value* mt3_true_singleton = gc_malloc<MT3Bool>();
+extern "C" MT3Value* mt3_stdlib_none = gc_malloc<MT3None>();
+extern "C" MT3Value* mt3_stdlib_false = gc_malloc<MT3Bool>();
+extern "C" MT3Value* mt3_stdlib_true = gc_malloc<MT3Bool>();
 
 extern "C" MT3Value* mt3_new_bool(bool x) {
-    return x ? mt3_true_singleton : mt3_false_singleton;
+    return x ? mt3_stdlib_true : mt3_stdlib_false;
 }
 
 extern "C" MT3Value* mt3_new_int(i64 x) {
@@ -126,7 +126,7 @@ extern "C" void* mt3_check_function_call(MT3Value* function, u8 arg_num) {
 extern "C" bool mt3_is_false(MT3Value* v) {
     if (v->tag != BOOL_TAG)
         panic("expected a bool");
-    return v == mt3_false_singleton;
+    return v == mt3_stdlib_false;
 }
 
 extern "C" bool mt3_is_true(MT3Value* v) {
@@ -152,7 +152,7 @@ static MT3Value* mt3_print_impl(MT3Value* arg) {
     } else {
         panic("Unsupported types for builtin_print");
     }
-    return mt3_none_singleton;
+    return mt3_stdlib_none;
 }
 
 static MT3Value* mt3_to_string_impl(MT3Value* arg) {
