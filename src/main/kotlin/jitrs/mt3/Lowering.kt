@@ -17,26 +17,24 @@ import java.util.*
 class ProgramLowering(val moduleName: String) {
     val codegen = Codegen()
 
-    private val stdlibGlobalVars = arrayOf(
-        "logical_not",
-        "print",
-        "equality",
-        "inequality",
-        "plus",
-        "minus",
-        "mul",
-        "div",
-        "less",
-        "lax_less",
-        "greater",
-        "lax_greater",
+    val globalVars = hashMapOf(
+        "!" to "mt3_stdlib_logical_not",
+        "print" to "mt3_stdlib_print",
+        "==" to "mt3_stdlib_equality",
+        "!=" to "mt3_stdlib_inequality",
+        "+" to "mt3_stdlib_plus",
+        "-" to "mt3_stdlib_minus",
+        "*" to "mt3_stdlib_mul",
+        "/" to "mt3_stdlib_div",
+        "<" to "mt3_stdlib_less",
+        "<=" to "mt3_stdlib_lax_less",
+        ">" to "mt3_stdlib_greater",
+        ">=" to "mt3_stdlib_lax_greater",
 
-        "none",
-        "false",
-        "true"
+        "none" to "mt3_stdlib_none",
+        "false" to "mt3_stdlib_false",
+        "true" to "mt3_stdlib_true",
     )
-
-    val globalVars = hashMapOf(*stdlibGlobalVars.map { it to "mt3_stdlib_$it" }.toTypedArray())
 
     /**
      * When traversing a module, index of the current free native global variable where
@@ -66,6 +64,8 @@ class ProgramLowering(val moduleName: String) {
             |
         """.trimMargin()
         )
+
+        // Import native globals for each predeclared global
         globalVars.forEach { (_, longName) ->
             codegen.headerCode.append("@$longName = external global %MT3Value*, align 8\n")
         }
@@ -116,8 +116,8 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
         //var funName =
         //    if (func.name == "main" || func.name.startsWith("mt3_")) "mt3_${func.name}" else func.name
 
-        val shortName = mangle(func.name)
-        val longName = "mt3_${owningProgram.moduleName}_$shortName"
+        val shortName = func.name
+        val longName = "mt3_${owningProgram.moduleName}_${mangle(shortName)}"
         val codeName = "${longName}-fun"
 
         // Add the function name to globals before lowering it to allow recursion
@@ -349,7 +349,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
             }
 
             is Expr.VariableUse -> {
-                val name = mangle(expr.name)
+                val name = expr.name
 
                 localVariables[name].also {
                     if (it != null) {
@@ -388,24 +388,6 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
         val where = localVariables[name]!!
         val what = visitExpr(block, expr).toCode()
         emitAssignLocalVariable(block, where, what)
-    }
-
-    // TODO: resolve collisions with names containing "plus"
-    private fun mangle(name: String): String {
-        var r = name
-        r = r.replace("==", "equality")
-        r = r.replace("!=", "inequality")
-        r = r.replace("+", "plus")
-        r = r.replace("-", "minus")
-        r = r.replace("*", "mul")
-        r = r.replace("/", "div")
-        r = r.replace("<", "less")
-        r = r.replace("<=", "lax_less")
-        r = r.replace(">", "greater")
-        r = r.replace(">=", "lax_greater")
-
-        r = r.replace("!", "logical_not")
-        return r
     }
 }
 
@@ -450,6 +432,20 @@ private fun emitLoadLocalVariable(block: Block, where: Int): FunctionLowering.Vi
 
 private fun emitLoadNone(block: Block): FunctionLowering.VisitExprResult {
     return emitLoadGlobalVar(block, "mt3_stdlib_none")
+}
+
+// TODO: resolve collisions with names containing "plus"
+private fun mangle(name: String): String {
+    var r = name
+    r = r.replace("!", "\$exclamation")
+    r = r.replace("=", "\$eq")
+    r = r.replace("+", "\$plus")
+    r = r.replace("*", "\$asterisk")
+    r = r.replace("/", "\$slash")
+    r = r.replace("<", "\$lessthan")
+    r = r.replace(">", "\$greaterthan")
+    r = r.replace(".", "\$dot")
+    return r
 }
 
 // A call sequence is a native function that "calls" a MT3Function object. It checks that
