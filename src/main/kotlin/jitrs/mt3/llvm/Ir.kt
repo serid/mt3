@@ -57,3 +57,20 @@ class Block(
         out.append(body)
     }
 }
+
+sealed class LLVMExpression {
+    data class SsaIndex(val ssa: Int) : LLVMExpression()
+
+    /**
+     * This variant is returned if the expression cannot be assigned an index and
+     * should be used inline in the containing SSA expression.
+     */
+    data class Immediate(val code: String) : LLVMExpression()
+    object None : LLVMExpression()
+
+    fun toCode(): String = when (this) {
+        is SsaIndex -> "%$ssa"
+        is Immediate -> code
+        is None -> throw RuntimeException("this expression has no result")
+    }
+}

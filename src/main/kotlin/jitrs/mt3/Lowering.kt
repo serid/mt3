@@ -3,6 +3,7 @@ package jitrs.mt3
 import jitrs.mt3.llvm.Block
 import jitrs.mt3.llvm.Codegen
 import jitrs.mt3.llvm.Function
+import jitrs.mt3.llvm.LLVMExpression
 import jitrs.util.countFrom
 import java.nio.file.Files
 import java.nio.file.Path
@@ -30,6 +31,7 @@ class ProgramLowering(val moduleName: String) {
         "<=" to "mt3_stdlib_lax_less",
         ">" to "mt3_stdlib_greater",
         ">=" to "mt3_stdlib_lax_greater",
+        "new" to "mt3_stdlib_new",
 
         "none" to "mt3_stdlib_none",
         "false" to "mt3_stdlib_false",
@@ -122,14 +124,12 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
 
         // Add the function name to globals before lowering it to allow recursion
         if (owningProgram.globalVars.put(shortName, longName) != null)
-            throw RuntimeException("warning: global var $shortName already exists")
+            throw RuntimeException("error: global var $shortName already exists")
 
         val generatedParameters = countFrom(0).take(arity).map { "%MT3Value* %$it" }.joinToString()
 
         // Skip ssa-s already used for generatedParameters
         val cfc = Function(MT3ValueErased, codeName, generatedParameters, arity)
-        localVariables.clear()
-        blocksToFinalizeWithReturn.clear()
 
         val entryBlock = cfc.newBlock()
 
@@ -145,7 +145,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
 
         // Add local variables as local variables
         // Declarations of local variables are hoisted to function header and are not lexical
-        val declarations = collectFunctionsVariables(func, HashSet(localVariables.keys)).asSequence()
+        val declarations = collectFunctionsVariables(func, HashSet(localVariables.keys))
         declarations.forEach { def ->
             val ssa = cfc.allocateSsaVariable()
             if (localVariables.put(def.name, ssa) != null)
@@ -158,9 +158,6 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
         if (localVariables.put("_return_value", retVarSsa) != null)
             throw RuntimeException("error: local var '_return_value' already exists")
         emitAllocaLocalVariable(entryBlock, retVarSsa, none)
-
-        // idk
-//                allocateSsaVariable()
 
         var currentBlock: Block? = entryBlock
 
@@ -195,11 +192,10 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
         owningProgram.moduleInitializer.add { block ->
             val casted = block.func.allocateSsaVariable()
             val res = block.func.allocateSsaVariable()
-            block.body.append("    ; Allocate function\n")
             block.body.append("    %$casted = bitcast %MT3Value* ($funPtrTypeList)* @$codeName to i8*\n")
             block.body
                 .append("    %$res = tail call %MT3Value* @mt3_new_function(i8 ${func.arity()}, i8* %$casted)\n")
-            emitInitializeGlobalVar(block, res, valueId)
+            emitInitializeGlobalVariable(block, res, valueId)
         }
     }
 
@@ -207,6 +203,8 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
     private fun visitStmt(block: Block, stmt: Stmt): Block? {
         when (stmt) {
             is Stmt.VariableDefinition -> {
+                // Variable declarations are hoisted to the function header in [visitFun]
+
                 // Replace the MT3None with a value
                 emitAssignLocal(block, stmt.name, stmt.initializer)
                 return block
@@ -295,7 +293,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
     /**
      * @return LLVM expression where result of this MT3 expression is stored
      */
-    private fun visitExpr(block: Block, expr: Expr): VisitExprResult {
+    private fun visitExpr(block: Block, expr: Expr): LLVMExpression {
         when (expr) {
             is Expr.IntConst -> {
                 val valueId = "mt3_intV${owningProgram.allocateNativeGlobalsIndex()}"
@@ -305,12 +303,11 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
 
                 owningProgram.moduleInitializer.add { block2 ->
                     val res = block2.func.allocateSsaVariable()
-                    block2.body.append("    ; Allocate int\n")
                     block2.body.append("    %$res = tail call %MT3Value* @mt3_new_int(i64 ${expr.int})\n")
-                    emitInitializeGlobalVar(block2, res, valueId)
+                    emitInitializeGlobalVariable(block2, res, valueId)
                 }
 
-                return emitLoadGlobalVar(block, valueId)
+                return emitLoadGlobalVariable(block, valueId)
             }
 
             is Expr.StringConst -> {
@@ -327,12 +324,11 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
 
                 owningProgram.moduleInitializer.add { block2 ->
                     val res = block2.func.allocateSsaVariable()
-                    block2.body.append("    ; Allocate string\n")
                     block2.body.append("    %$res = tail call %MT3Value* @mt3_new_string(i8* getelementptr inbounds ([$lenWithNull x i8], [$lenWithNull x i8]* @$bytesId, i64 0, i64 0))\n")
-                    emitInitializeGlobalVar(block2, res, valueId)
+                    emitInitializeGlobalVariable(block2, res, valueId)
                 }
 
-                return emitLoadGlobalVar(block, valueId)
+                return emitLoadGlobalVariable(block, valueId)
             }
 
             is Expr.Call -> {
@@ -345,42 +341,22 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
                 val ssa = block.func.allocateSsaVariable()
 
                 block.body.append("    %$ssa = tail call %MT3Value* @mt3_builtin_call${expr.arity()}($args)\n")
-                return VisitExprResult.SsaIndex(ssa)
+                return LLVMExpression.SsaIndex(ssa)
             }
 
             is Expr.VariableUse -> {
                 val name = expr.name
 
                 localVariables[name].also {
-                    if (it != null) {
-                        val res = block.func.allocateSsaVariable()
-                        block.body.append("    %$res = load %MT3Value*, %MT3Value** %$it, align 8\n")
-                        return VisitExprResult.SsaIndex(res)
-                    }
+                    if (it != null)
+                        return emitLoadLocalVariable(block, it)
                 }
                 owningProgram.globalVars[name].also {
                     if (it != null)
-                        return emitLoadGlobalVar(block, it)
+                        return emitLoadGlobalVariable(block, it)
                 }
                 throw RuntimeException("variable not found: $name")
             }
-        }
-    }
-
-    sealed class VisitExprResult {
-        data class SsaIndex(val ix: Int) : VisitExprResult()
-
-        /**
-         * This variant is returned if the expression cannot be assigned an index and
-         * should be used inline in the containing SSA expression.
-         */
-        data class Immediate(val code: String) : VisitExprResult()
-        object None : VisitExprResult()
-
-        fun toCode(): String = when (this) {
-            is SsaIndex -> "%$ix"
-            is Immediate -> code
-            is None -> throw RuntimeException("this expression has no result")
         }
     }
 
@@ -391,28 +367,23 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
     }
 }
 
-private fun emitInitializeGlobalVar(block: Block, what: Int, globalId: String) {
-    block.body.append(
-        """|    ; Store allocated value to a native global variable
-           |    store %MT3Value* %$what, %MT3Value** @$globalId, align 8
-           |
-           """.trimMargin()
-    )
+private fun emitInitializeGlobalVariable(block: Block, what: Int, globalId: String) {
+    block.body.append("    store %MT3Value* %$what, %MT3Value** @$globalId, align 8\n")
     emitRegisterGcRoot(block, what)
 }
 
-private fun emitRegisterGcRoot(block: Block, ix: Int) {
+private fun emitRegisterGcRoot(block: Block, ssa: Int) {
     val casted = block.func.allocateSsaVariable()
     block.body.append(
-        """|    %$casted = bitcast %MT3Value* %$ix to %GCObject*
+        """|    %$casted = bitcast %MT3Value* %$ssa to %GCObject*
            |    tail call void @mt3_add_gc_root(%GCObject* %$casted)""".trimMargin()
     )
 }
 
-private fun emitLoadGlobalVar(block: Block, name: String): FunctionLowering.VisitExprResult {
+private fun emitLoadGlobalVariable(block: Block, name: String): LLVMExpression {
     val ssa = block.func.allocateSsaVariable()
     block.body.append("    %$ssa = load %MT3Value*, %MT3Value** @$name, align 8\n")
-    return FunctionLowering.VisitExprResult.SsaIndex(ssa)
+    return LLVMExpression.SsaIndex(ssa)
 }
 
 private fun emitAllocaLocalVariable(block: Block, ssa: Int, initializer: String) {
@@ -424,14 +395,14 @@ private fun emitAssignLocalVariable(block: Block, where: Int, what: String) {
     block.body.append("    store %MT3Value* $what, %MT3Value** %$where, align 8\n")
 }
 
-private fun emitLoadLocalVariable(block: Block, where: Int): FunctionLowering.VisitExprResult {
+private fun emitLoadLocalVariable(block: Block, fromWhere: Int): LLVMExpression {
     val ssa = block.func.allocateSsaVariable()
-    block.body.append("    %$ssa = load %MT3Value*, %MT3Value** %$where, align 8\n")
-    return FunctionLowering.VisitExprResult.SsaIndex(ssa)
+    block.body.append("    %$ssa = load %MT3Value*, %MT3Value** %$fromWhere, align 8\n")
+    return LLVMExpression.SsaIndex(ssa)
 }
 
-private fun emitLoadNone(block: Block): FunctionLowering.VisitExprResult {
-    return emitLoadGlobalVar(block, "mt3_stdlib_none")
+private fun emitLoadNone(block: Block): LLVMExpression {
+    return emitLoadGlobalVariable(block, "mt3_stdlib_none")
 }
 
 // TODO: resolve collisions with names containing "plus"

@@ -6,6 +6,26 @@ inline fun <reified T> Any.cast(): T = this as T
 
 inline fun <reified T> Sequence<T>.priceyToArray(): Array<T> = this.toList().toTypedArray()
 
+//inline fun <reified T> Sequence<T>.cheapToArray(): Array<T> {
+//    val list = this.toList()
+//    list as ArrayList<T>
+//
+//    @Suppress("UNCHECKED_CAST")
+//    return unsafe.getObject(list, arrayListElementDataFieldOffset.value) as Array<T>
+//}
+//
+//val arrayListElementDataFieldOffset = lazy {
+//    unsafe.objectFieldOffset(arrayListElementDataField.value)
+//}
+//
+//val arrayListElementDataField = lazy {
+//    val field = ArrayList::class.java.getDeclaredField("elementData")
+//    field.isAccessible = true
+//    field
+//}
+//
+//val unsafe = Unsafe.getUnsafe()
+
 inline fun <T> doHere(f: () -> T): T = f()
 
 fun myAssert(b: Boolean) {
