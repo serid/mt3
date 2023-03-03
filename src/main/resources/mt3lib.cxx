@@ -10,6 +10,12 @@
 #include "util.h"
 #include "gc.hxx"
 
+#define DOWNCAST_TEMPLATE(type_name, type_tag, error_message) \
+    static type_name* downcast_from(MT3Value* value) { \
+        my_assert(value->tag == type_tag, error_message); \
+        return static_cast<type_name*>(value); \
+    }
+
 static const u8 NONE_TAG = 1;
 static const u8 BOOL_TAG = 2;
 static const u8 INT_TAG = 3;
@@ -24,16 +30,22 @@ struct MT3Value : public GCObject {
 };
 struct MT3None : public MT3Value {
     MT3None() : MT3Value(NONE_TAG) {}
+
+    DOWNCAST_TEMPLATE(MT3None, NONE_TAG, "expected a none")
 };
 struct MT3Bool : public MT3Value {
     // true and false are singletons, no need to store the value
 
     MT3Bool() : MT3Value(BOOL_TAG) {}
+
+    DOWNCAST_TEMPLATE(MT3Bool, BOOL_TAG, "expected a bool")
 };
 struct MT3Int : public MT3Value {
     i64 value;
 
     MT3Int(i64 value) : MT3Value(INT_TAG), value(value) {}
+
+    DOWNCAST_TEMPLATE(MT3Int, INT_TAG, "expected an int")
 };
 struct MT3Array : public MT3Value {
     std::vector<MT3Value*> values;
@@ -46,6 +58,8 @@ struct MT3Array : public MT3Value {
         for (const auto& x : values)
             x->visit();
     }
+
+    DOWNCAST_TEMPLATE(MT3Array, ARRAY_TAG, "expected an array")
 };
 struct MT3String : public MT3Value {
     std::string data;
@@ -53,6 +67,8 @@ struct MT3String : public MT3Value {
     MT3String(std::string&& data) : MT3Value(STRING_TAG), data(data) {}
 
     MT3String(std::string& data) : MT3Value(STRING_TAG), data(data) {}
+
+    DOWNCAST_TEMPLATE(MT3String, STRING_TAG, "expected a string")
 };
 struct MT3Function : public MT3Value {
     // this function pointer has type like (MT3Value* fun(MT3Value*, MT3Value*)).
@@ -79,13 +95,10 @@ struct MT3Function : public MT3Value {
         for (const auto& x : closure)
             x->visit();
     }
-};
 
-[[noreturn]]
-static void panic(const char* message) {
-    puts(message);
-    exit(1);
-}
+    DOWNCAST_TEMPLATE(MT3Function, FUNCTION_TAG, "'function' is not a function")
+};
+#undef DOWNCAST_TEMPLATE
 
 template<typename T, typename... Args>
 T* gc_malloc(Args... args) {
@@ -115,22 +128,18 @@ extern "C" MT3Value* mt3_new_function(u8 parameter_num, void* fun) {
 
 /// Check that the value is an MT3Function, match its number of arguments and return its function pointer.
 extern "C" void* mt3_check_function_call(MT3Value* function, u8 arg_num) {
-    if (function->tag != FUNCTION_TAG)
-        panic("'function' is not a function");
-    auto casted_function = static_cast<MT3Function*>(function);
-    if (casted_function->parameter_num != arg_num)
-        panic("wrong number of arguments");
+    auto casted_function = MT3Function::downcast_from(function);
+    my_assert(casted_function->parameter_num == arg_num, "wrong number of arguments");
     return reinterpret_cast<void*>(casted_function->fun);
 }
 
-extern "C" bool mt3_is_false(MT3Value* v) {
-    if (v->tag != BOOL_TAG)
-        panic("expected a bool");
-    return v == mt3_stdlib_false;
+extern "C" bool mt3_is_false(MT3Value* value) {
+    MT3Bool::downcast_from(value);
+    return value == mt3_stdlib_false;
 }
 
-extern "C" bool mt3_is_true(MT3Value* v) {
-    return !mt3_is_false(v);
+extern "C" bool mt3_is_true(MT3Value* value) {
+    return !mt3_is_false(value);
 }
 
 /// This function will be reified in Codegen.kt
@@ -150,7 +159,7 @@ static MT3Value* mt3_print_impl(MT3Value* arg) {
     } else if (arg->tag == STRING_TAG) {
         fputs(static_cast<MT3String*>(arg)->data.data(), stdout);
     } else {
-        panic("Unsupported types for builtin_print");
+        panic("unsupported types for builtin_print");
     }
     return mt3_stdlib_none;
 }
@@ -163,7 +172,7 @@ static MT3Value* mt3_to_string_impl(MT3Value* arg) {
     } else if (arg->tag == STRING_TAG) {
         return arg;
     }
-    panic("Unsupported types for builtin_to_string");
+    panic("unsupported types for builtin_to_string");
 }
 
 // operator!
@@ -171,7 +180,7 @@ static MT3Value* mt3_logical_not_impl(MT3Value* arg) {
     if (arg->tag == BOOL_TAG) {
         return mt3_new_bool(!mt3_is_true(arg));
     }
-    panic("Unsupported types for builtin_logical_not");
+    panic("unsupported types for builtin_logical_not");
 }
 
 // operator== and !=
@@ -187,11 +196,11 @@ static bool mt3_equality_cxx(MT3Value* a, MT3Value* b, const char* error_message
 }
 
 static MT3Value* mt3_equality_impl(MT3Value* a, MT3Value* b) {
-    return mt3_new_bool(mt3_equality_cxx(a, b, "Unsupported types for builtin_equality"));
+    return mt3_new_bool(mt3_equality_cxx(a, b, "unsupported types for builtin_equality"));
 }
 
 static MT3Value* mt3_inequality_impl(MT3Value* a, MT3Value* b) {
-    return mt3_new_bool(!mt3_equality_cxx(a, b, "Unsupported types for builtin_inequality"));
+    return mt3_new_bool(!mt3_equality_cxx(a, b, "unsupported types for builtin_inequality"));
 }
 
 // operator+
@@ -206,7 +215,7 @@ static MT3Value* mt3_plus_impl(MT3Value* a, MT3Value* b) {
         result->data += static_cast<MT3String*>(mt3_to_string_impl(b))->data;
         return result;
     }
-    panic("Unsupported types for builtin_plus");
+    panic("unsupported types for builtin_plus");
 }
 
 // operator-*/
@@ -219,31 +228,31 @@ MT3Value* generic_int_function(MT3Value* a, MT3Value* b, const char* error_messa
 }
 
 static MT3Value* mt3_minus_impl(MT3Value* a, MT3Value* b) {
-    return generic_int_function<[](i64 x, i64 y) { return mt3_new_int(x - y); }>(a, b, "Unsupported types for builtin_minus");
+    return generic_int_function<[](i64 x, i64 y) { return mt3_new_int(x - y); }>(a, b, "unsupported types for builtin_minus");
 }
 
 static MT3Value* mt3_mul_impl(MT3Value* a, MT3Value* b) {
-    return generic_int_function<[](i64 x, i64 y) { return mt3_new_int(x * y); }>(a, b, "Unsupported types for builtin_mul");
+    return generic_int_function<[](i64 x, i64 y) { return mt3_new_int(x * y); }>(a, b, "unsupported types for builtin_mul");
 }
 
 static MT3Value* mt3_div_impl(MT3Value* a, MT3Value* b) {
-    return generic_int_function<[](i64 x, i64 y) { return mt3_new_int(x / y); }>(a, b, "Unsupported types for builtin_div");
+    return generic_int_function<[](i64 x, i64 y) { return mt3_new_int(x / y); }>(a, b, "unsupported types for builtin_div");
 }
 
 static MT3Value* mt3_less_impl(MT3Value* a, MT3Value* b) {
-    return generic_int_function<[](i64 x, i64 y) { return mt3_new_bool(x < y); }>(a, b, "Unsupported types for builtin_less");
+    return generic_int_function<[](i64 x, i64 y) { return mt3_new_bool(x < y); }>(a, b, "unsupported types for builtin_less");
 }
 
 static MT3Value* mt3_lax_less_impl(MT3Value* a, MT3Value* b) {
-    return generic_int_function<[](i64 x, i64 y) { return mt3_new_bool(x <= y); }>(a, b, "Unsupported types for builtin_lax_less");
+    return generic_int_function<[](i64 x, i64 y) { return mt3_new_bool(x <= y); }>(a, b, "unsupported types for builtin_lax_less");
 }
 
 static MT3Value* mt3_greater_impl(MT3Value* a, MT3Value* b) {
-    return generic_int_function<[](i64 x, i64 y) { return mt3_new_bool(x > y); }>(a, b, "Unsupported types for builtin_greater");
+    return generic_int_function<[](i64 x, i64 y) { return mt3_new_bool(x > y); }>(a, b, "unsupported types for builtin_greater");
 }
 
 static MT3Value* mt3_lax_greater_impl(MT3Value* a, MT3Value* b) {
-    return generic_int_function<[](i64 x, i64 y) { return mt3_new_bool(x >= y); }>(a, b, "Unsupported types for builtin_lax_greater");
+    return generic_int_function<[](i64 x, i64 y) { return mt3_new_bool(x >= y); }>(a, b, "unsupported types for builtin_lax_greater");
 }
 
 // Here follow native global variables with MT3Value-wrappers around stdlib functions
