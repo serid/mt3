@@ -16,11 +16,8 @@
     let pkgs = nixpkgs.legacyPackages.x86_64-linux; in {
       devShell.x86_64-linux = pkgs.mkShell {
         packages = [ pkgs.clang_14 pkgs.llvmPackages_14.llvm pkgs.mold pkgs.jdk pkgs.valgrind ];
-        #packages = [ pkgs.clang_14 pkgs.jdk ];
-        # use jetbrains jdk
-        #packages = [ pkgs.clang_14 ];
-
-        # RUSTFLAGS = "-A dead_code";
+        
+        PKG_CONFIG_PATH = "${pkgs.openssl}/lib/pkgconfig/";
     };
   };
 }
