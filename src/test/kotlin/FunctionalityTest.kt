@@ -11,22 +11,22 @@ import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import kotlin.io.path.absolutePathString
 
-fun functionalityTest(src: String, expectedStdout: String) {
-    myAssertEqual(execMt3(src), expectedStdout)
+fun functionalityTest(testName: String, src: String, expectedStdout: String) {
+    myAssertEqual(execMt3(testName, src), expectedStdout)
 }
 
 /**
  * @return stdout of running the program
  */
-private fun execMt3(src: String): String {
+private fun execMt3(filenames: String, src: String): String {
     val tokens = tokenize(src).asSequence().priceyToArray()
     val sexprs = parseSExprs(PeekableIterator(tokens.iterator()))
     val program = programFromSExprs(sexprs)
     val lir = ProgramLowering("lemod").toLlvm(program)
 
-    val mt3MainLl = Files.createTempFile("mainmod-llvm-ir", ".ll")
-    val mt3MainO = Files.createTempFile("mainmod-obj", ".o")
-    val out = Files.createTempFile("mt3-executable", "")
+    val mt3MainLl = Files.createTempFile("$filenames-llvm-ir", ".ll")
+    val mt3MainO = Files.createTempFile("$filenames-obj", ".o")
+    val out = Files.createTempFile("$filenames-executable", "")
 
     Files.writeString(mt3MainLl, lir)
 
@@ -39,6 +39,8 @@ private fun execMt3(src: String): String {
     val mt3Stdout = ByteArrayOutputStream(512)
     mt3Process.inputStream.copyTo(mt3Stdout)
     mt3Process.waitFor()
+    if (mt3Process.exitValue() != 0)
+        throw RuntimeException("mt3 exit code: ${mt3Process.exitValue()}")
 
     return mt3Stdout.toString(Charsets.UTF_8)
 }

@@ -30,6 +30,12 @@ fun stmtFromSExpr(e: MT3SExpr): Stmt {
             e.subexprs[1].cast<MT3Leaf>().token.getIdent(), exprFromSExpr(e.subexprs[2])
         )
 
+        ".=" -> return Stmt.FieldAssignment(
+            exprFromSExpr(e.subexprs[1]),
+            e.subexprs[2].cast<MT3Leaf>().token.getIdent(),
+            exprFromSExpr(e.subexprs[3])
+        )
+
         "if" -> return Stmt.If(
             exprFromSExpr(e.subexprs[1]),
             e.subexprs.asSequence().drop(2).map(::stmtFromSExpr).priceyToArray()
@@ -50,9 +56,17 @@ fun exprFromSExpr(e: MT3SExpr): Expr = when {
     e is MT3Leaf && e.token.id == intT -> Expr.IntConst(e.token.getInt())
     e is MT3Leaf && e.token.id == stringT -> Expr.StringConst(e.token.getString())
     e is MT3Leaf && e.token.id == identT -> Expr.VariableUse(e.token.getIdent())
-    e is MT3Node -> Expr.Call(
-        exprFromSExpr(e.subexprs[0]), e.subexprs.asSequence().drop(1).map(::exprFromSExpr).priceyToArray()
-    )
+    e is MT3Node -> when {
+        e.subexprs[0] is MT3Leaf && e.subexprs[0].cast<MT3Leaf>().token.id == identT &&
+                e.subexprs[0].cast<MT3Leaf>().token.getIdent() == "." -> Expr.FieldAccess(
+            exprFromSExpr(e.subexprs[1]),
+            e.subexprs[2].cast<MT3Leaf>().token.getIdent()
+        )
+
+        else -> Expr.Call(
+            exprFromSExpr(e.subexprs[0]), e.subexprs.asSequence().drop(1).map(::exprFromSExpr).priceyToArray()
+        )
+    }
 
     else -> throw RuntimeException()
 }
@@ -76,6 +90,8 @@ sealed class Stmt {
 
     data class Assignment(val name: String, val e: Expr) : Stmt()
 
+    data class FieldAssignment(val scrutinee: Expr, val fieldName: String, val rhs: Expr) : Stmt()
+
     data class If(val cond: Expr, val body: Array<Stmt>) : Stmt()
 
     data class While(val cond: Expr, val body: Array<Stmt>) : Stmt()
@@ -95,6 +111,8 @@ sealed class Expr {
     data class Call(val func: Expr, val args: Array<Expr>) : Expr() {
         fun arity(): Int = args.size
     }
+
+    data class FieldAccess(val scrutinee: Expr, val fieldName: String) : Expr()
 }
 
 fun collectFunctionsVariables(
@@ -112,6 +130,8 @@ fun collectFunctionsVariables(
             }
 
             is Stmt.Assignment -> {}
+
+            is Stmt.FieldAssignment -> {}
 
             is Stmt.If -> {
                 stmt.body.forEach {

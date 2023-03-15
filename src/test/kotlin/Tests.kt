@@ -2,7 +2,7 @@ import jitrs.util.priceyToArray
 import kotlin.concurrent.thread
 
 fun main() {
-    val tests = sequenceOf(::test1, ::test2)
+    val tests = sequenceOf(::test1, ::test2, ::objectTest)
     val errors = ArrayList<Throwable>()
 
     // Spawn a thread for each test and only after that join them
@@ -22,11 +22,12 @@ fun main() {
 }
 
 private fun test1() {
-    functionalityTest("""(fun main () (print 10))""", "10")
+    functionalityTest("test1", """(fun main () (print 10))""", "10")
 }
 
 private fun test2() {
     functionalityTest(
+        "test2",
         """
         |(fun fibonacci (n)
         |    (if (== n 0) (return 0))
@@ -56,5 +57,20 @@ private fun test2() {
         |    (print "")
         |)""".trimMargin(),
         "Here are 10 fibonacci numbers: 0,1,1,2,3,5,8,13,21,34,"
+    )
+}
+
+private fun objectTest() {
+    functionalityTest(
+        "objects",
+        """
+        |(fun main()
+        |    (let pair1 (new))
+        |    (.= pair1 x 10)
+        |    (.= pair1 y 20)
+        |    (print (. pair1 x))
+        |    (print (. pair1 y))
+        |)""".trimMargin(),
+        "1020"
     )
 }

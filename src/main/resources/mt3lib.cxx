@@ -2,7 +2,9 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <optional>
 #include <vector>
+#include <unordered_map>
 #include <string>
 //#include <utility>
 #include <type_traits>
@@ -10,7 +12,28 @@
 #include "util.h"
 #include "gc.hxx"
 
+//// CONFIG
+
+// Select how objects are represented in memory
+#define MT3_OBJECTS_DICTIONARY 1
+#define MT3_OBJECTS_HIDDENCLASS 2
+
+#define MT3_OBJECTS_LAYOUT MT3_OBJECTS_DICTIONARY
+
+// Select whether inline caches should be used
+#define MT3_OBJECTS_IC 0
+
+// IC can only be used with hiddenclasses
+static_assert(!(MT3_OBJECTS_IC && MT3_OBJECTS_LAYOUT != MT3_OBJECTS_HIDDENCLASS));
+
 //// MT3VALUE
+
+#if MT3_OBJECTS_LAYOUT == MT3_OBJECTS_HIDDENCLASS
+struct HiddenClass;
+namespace {
+    extern HiddenClass* hiddenclasses_root;
+}
+#endif
 
 #define DOWNCAST_TEMPLATE(type_name, type_tag, error_message) \
     static type_name* downcast_from(MT3Value* value) { \
@@ -65,13 +88,38 @@ struct MT3Array : public MT3Value {
 };
 struct MT3String : public MT3Value {
     const std::string data;
+    std::optional<size_t> cached_hash{};
 
     MT3String(std::string&& data) : MT3Value(STRING_TAG), data(data) {}
 
     MT3String(const std::string& data) : MT3Value(STRING_TAG), data(data) {}
 
+    bool is_equal(MT3String* other) {
+        return this == other || this->data == other->data;
+    }
+
+    size_t hash() {
+        if (!cached_hash.has_value())
+            cached_hash = std::hash<std::string>()(data);
+        return cached_hash.value();
+    }
+
+    struct Hasher {
+        size_t operator()(MT3String* const& a) const {
+            return a->hash();
+        }
+    };
+
+    struct Equalizer {
+        bool operator()(MT3String* const& a, MT3String* const& b) const {
+            return a->is_equal(b);
+        }
+    };
+
     DOWNCAST_TEMPLATE(MT3String, STRING_TAG, "expected a string")
 };
+template<typename T>
+using MT3StringMap = std::unordered_map<MT3String*, T, MT3String::Hasher, MT3String::Equalizer>;
 struct MT3Function : public MT3Value {
     // this function pointer has type like (MT3Value* fun(MT3Value*, MT3Value*)).
     // It would require monomorphing call1, call2, call3 in LLVM IR
@@ -100,6 +148,34 @@ struct MT3Function : public MT3Value {
 
     DOWNCAST_TEMPLATE(MT3Function, FUNCTION_TAG, "'function' is not a function")
 };
+struct MT3Object : public MT3Value {
+#if MT3_OBJECTS_LAYOUT == MT3_OBJECTS_DICTIONARY
+    MT3StringMap<MT3Value*> fields {};
+#else
+    HiddenClass* hc = hiddenclasses_root;
+    std::vector<MT3Value*> attrs {};
+#endif
+
+    MT3Object() : MT3Value(OBJECT_TAG) {}
+
+    void visit() override {
+        if (is_marked()) return;
+        set_mark();
+#if MT3_OBJECTS_LAYOUT == MT3_OBJECTS_DICTIONARY
+        for (const auto& [key, value] : fields) {
+            key->visit();
+            value->visit();
+        }
+#else
+        hc->visit();
+        for (const auto& attr : attrs) {
+            attr->visit();
+        }
+#endif
+    }
+
+    DOWNCAST_TEMPLATE(MT3Object, OBJECT_TAG, "expected an object")
+};
 #undef DOWNCAST_TEMPLATE
 
 template<typename T, typename... Args>
@@ -107,6 +183,36 @@ T* gc_malloc(Args... args) {
     return new T(args...);
 //     return static_cast<T*>(malloc(sizeof(T)));
 }
+
+#if MT3_OBJECTS_LAYOUT == MT3_OBJECTS_HIDDENCLASS
+// A hidden class maps field names to indices in the attribute array
+// https://v8.dev/docs/hidden-classes
+struct HiddenClass {
+    const MT3StringMap<u8> map;
+
+    // Map of hidden classes derived from this one by adding fields (transitioning)
+    MT3StringMap<HiddenClass*> derived;
+
+    HiddenClass(MT3StringMap<u8>&& map,
+        const MT3StringMap<HiddenClass*>&) : map(map), derived(derived) {}
+
+    void visit() {
+        for (const auto& [key, _value] : map)
+            key->visit();
+        for (const auto& [key, value] : derived) {
+            key->visit();
+            value->visit();
+        }
+    }
+};
+
+namespace {
+    // The empty hidden class
+    HiddenClass* hiddenclasses_root = new HiddenClass({}, {});
+}
+#endif
+
+//// RUNTIME LIBRARY
 
 extern "C" MT3Value* mt3_stdlib_none = gc_malloc<MT3None>();
 extern "C" MT3Value* mt3_stdlib_false = gc_malloc<MT3Bool>();
@@ -126,6 +232,29 @@ extern "C" MT3Value* mt3_new_string(char* s) {
 
 extern "C" MT3Value* mt3_new_function(u8 parameter_num, void* fun) {
     return gc_malloc<MT3Function>(parameter_num, fun);
+}
+
+extern "C" void mt3_set_field(MT3Value* scrutinee, MT3Value* field_name, MT3Value* rhs) {
+    auto scrutinee1 = MT3Object::downcast_from(scrutinee);
+    auto field_name1 = MT3String::downcast_from(field_name);
+
+#if MT3_OBJECTS_LAYOUT == MT3_OBJECTS_DICTIONARY
+    scrutinee1->fields.insert_or_assign(field_name1, rhs);
+#endif
+}
+
+extern "C" MT3Value* mt3_get_field(MT3Value* scrutinee, MT3Value* field_name) {
+    auto scrutinee1 = MT3Object::downcast_from(scrutinee);
+    auto field_name1 = MT3String::downcast_from(field_name);
+
+#if MT3_OBJECTS_LAYOUT == MT3_OBJECTS_DICTIONARY
+    MT3Value* result = scrutinee1->fields[field_name1];
+
+    // operator[] inserts a default nullptr and returns it if key is not present
+    my_assert(result != nullptr, "field not present");
+
+    return result;
+#endif
 }
 
 /// Check that the value is an MT3Function, match its number of arguments and return its function pointer.
@@ -259,6 +388,10 @@ static MT3Value* mt3_lax_greater_impl(MT3Value* a, MT3Value* b) {
     return generic_int_function<[](i64 x, i64 y) { return mt3_new_bool(x >= y); }>(a, b, "unsupported types for builtin_lax_greater");
 }
 
+static MT3Value* mt3_new_impl() {
+    return gc_malloc<MT3Object>();
+}
+
 // Here follow native global variables with MT3Value-wrappers around stdlib functions
 #define DECLARE_STDLIB_GLOBAL(name, arity) \
 extern "C" MT3Value* mt3_stdlib_##name = gc_malloc<MT3Function>(arity, reinterpret_cast<void*>(mt3_##name##_impl));
@@ -274,6 +407,7 @@ DECLARE_STDLIB_GLOBAL(less, 2)
 DECLARE_STDLIB_GLOBAL(lax_less, 2)
 DECLARE_STDLIB_GLOBAL(greater, 2)
 DECLARE_STDLIB_GLOBAL(lax_greater, 2)
+DECLARE_STDLIB_GLOBAL(new, 0)
 #undef DECLARE_STDLIB_GLOBAL
 
 // extern "C" MT3Value* mt3_mt3lib_gc_roots[] = {mt3_print, mt3_plus};
@@ -292,6 +426,7 @@ static void add_builtins_as_gc_roots() {
     mt3_add_gc_root(mt3_stdlib_lax_less);
     mt3_add_gc_root(mt3_stdlib_greater);
     mt3_add_gc_root(mt3_stdlib_lax_greater);
+    mt3_add_gc_root(mt3_stdlib_new);
 }
 
 static void mt3_stdlib_init() {

@@ -215,11 +215,22 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
                 return block
             }
 
+            is Stmt.FieldAssignment -> {
+                val scrutineeSsa = visitExpr(block, stmt.scrutinee).toCode()
+                val rhsSsa = visitExpr(block, stmt.rhs).toCode()
+                val fieldNameSsa = emitStringConst(block, stmt.fieldName).toCode()
+                block.body.append(
+                    "    tail call void @mt3_set_field(" +
+                            "%MT3Value* $scrutineeSsa, %MT3Value* $fieldNameSsa, %MT3Value* $rhsSsa)\n"
+                )
+                return block
+            }
+
             is Stmt.If -> {
                 val ifBlock = block
                 val arg = visitExpr(ifBlock, stmt.cond).toCode()
                 val condition = block.func.allocateSsaVariable()
-                ifBlock.body.append("%$condition = tail call i1 @mt3_is_true(%MT3Value* $arg)\n")
+                ifBlock.body.append("    %$condition = tail call i1 @mt3_is_true(%MT3Value* $arg)\n")
 
                 val onTrueEntry = block.func.newBlock()
                 var onTrue: Block? = onTrueEntry
@@ -311,24 +322,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
             }
 
             is Expr.StringConst -> {
-                val lenWithNull = (expr.string.length + 1).toString()
-                val id = owningProgram.allocateNativeGlobalsIndex()
-                val bytesId = "mt3_str$id"
-                val valueId = "mt3_strV$id"
-
-                // Create a native global holding bytes of this string literal
-                owningProgram.codegen.headerCode.append("@$bytesId = private unnamed_addr constant [$lenWithNull x i8] c\"${expr.string}\\00\", align 1\n")
-
-                // Create a native global holding MT3Value* pointer to a string value
-                owningProgram.codegen.headerCode.append("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
-
-                owningProgram.moduleInitializer.add { block2 ->
-                    val res = block2.func.allocateSsaVariable()
-                    block2.body.append("    %$res = tail call %MT3Value* @mt3_new_string(i8* getelementptr inbounds ([$lenWithNull x i8], [$lenWithNull x i8]* @$bytesId, i64 0, i64 0))\n")
-                    emitInitializeGlobalVariable(block2, res, valueId)
-                }
-
-                return emitLoadGlobalVariable(block, valueId)
+                return emitStringConst(block, expr.string)
             }
 
             is Expr.Call -> {
@@ -357,6 +351,17 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
                 }
                 throw RuntimeException("variable not found: $name")
             }
+
+            is Expr.FieldAccess -> {
+                val scrutineeSsa = visitExpr(block, expr.scrutinee).toCode()
+                val fieldNameSsa = emitStringConst(block, expr.fieldName).toCode()
+                val ssa = block.func.allocateSsaVariable()
+                block.body.append(
+                    "    %$ssa = tail call %MT3Value* @mt3_get_field(" +
+                            "%MT3Value* $scrutineeSsa, %MT3Value* $fieldNameSsa)\n"
+                )
+                return LLVMExpression.SsaIndex(ssa)
+            }
         }
     }
 
@@ -364,6 +369,27 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
         val where = localVariables[name]!!
         val what = visitExpr(block, expr).toCode()
         emitAssignLocalVariable(block, where, what)
+    }
+
+    private fun emitStringConst(block: Block, string: String): LLVMExpression {
+        val lenWithNull = (string.length + 1).toString()
+        val id = owningProgram.allocateNativeGlobalsIndex()
+        val bytesId = "mt3_str$id"
+        val valueId = "mt3_strV$id"
+
+        // Create a native global holding bytes of this string literal
+        owningProgram.codegen.headerCode.append("@$bytesId = private unnamed_addr constant [$lenWithNull x i8] c\"${string}\\00\", align 1\n")
+
+        // Create a native global holding MT3Value* pointer to a string value
+        owningProgram.codegen.headerCode.append("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
+
+        owningProgram.moduleInitializer.add { block2 ->
+            val res = block2.func.allocateSsaVariable()
+            block2.body.append("    %$res = tail call %MT3Value* @mt3_new_string(i8* getelementptr inbounds ([$lenWithNull x i8], [$lenWithNull x i8]* @$bytesId, i64 0, i64 0))\n")
+            emitInitializeGlobalVariable(block2, res, valueId)
+        }
+
+        return emitLoadGlobalVariable(block, valueId)
     }
 }
 
