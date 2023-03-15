@@ -10,6 +10,8 @@
 #include "util.h"
 #include "gc.hxx"
 
+//// MT3VALUE
+
 #define DOWNCAST_TEMPLATE(type_name, type_tag, error_message) \
     static type_name* downcast_from(MT3Value* value) { \
         my_assert(value->tag == type_tag, error_message); \
@@ -24,7 +26,7 @@ static const u8 STRING_TAG = 5;
 static const u8 FUNCTION_TAG = 6;
 static const u8 OBJECT_TAG = 7;
 struct MT3Value : public GCObject {
-    u8 tag;
+    const u8 tag;
 
     MT3Value(u8 tag) : tag(tag) {}
 };
@@ -41,7 +43,7 @@ struct MT3Bool : public MT3Value {
     DOWNCAST_TEMPLATE(MT3Bool, BOOL_TAG, "expected a bool")
 };
 struct MT3Int : public MT3Value {
-    i64 value;
+    const i64 value;
 
     MT3Int(i64 value) : MT3Value(INT_TAG), value(value) {}
 
@@ -62,11 +64,11 @@ struct MT3Array : public MT3Value {
     DOWNCAST_TEMPLATE(MT3Array, ARRAY_TAG, "expected an array")
 };
 struct MT3String : public MT3Value {
-    std::string data;
+    const std::string data;
 
     MT3String(std::string&& data) : MT3Value(STRING_TAG), data(data) {}
 
-    MT3String(std::string& data) : MT3Value(STRING_TAG), data(data) {}
+    MT3String(const std::string& data) : MT3Value(STRING_TAG), data(data) {}
 
     DOWNCAST_TEMPLATE(MT3String, STRING_TAG, "expected a string")
 };
@@ -81,7 +83,7 @@ struct MT3Function : public MT3Value {
 
     // Formal number of parameters expected by "fun". Should match actual number of arguments in "args"
     // when funptr is called
-    u8 parameter_num;
+    const u8 parameter_num;
 
     MT3Function(u8 parameter_num, void* fun, std::vector<MT3Value*>&& closure) :
         MT3Value(FUNCTION_TAG), parameter_num(parameter_num), fun(fun), closure(std::move(closure)) {}
@@ -151,6 +153,8 @@ MT3Value* mt3_builtin_call2_example(MT3Value* function, MT3Value* arg1, MT3Value
     return fun(arg1, arg2);
 }
 
+//// STANDARD LIBRARY
+
 static MT3Value* mt3_print_impl(MT3Value* arg) {
     if (arg->tag == BOOL_TAG) {
         fputs(mt3_is_true(arg) ? "true" : "false", stdout);
@@ -210,10 +214,10 @@ static MT3Value* mt3_plus_impl(MT3Value* a, MT3Value* b) {
         return mt3_new_int(sum);
     } else if (a->tag == STRING_TAG || b->tag == STRING_TAG) {
         // If one of the arguments is a string, convert both to string and concatenate
-        MT3String* result = gc_malloc<MT3String>("");
-        result->data += static_cast<MT3String*>(mt3_to_string_impl(a))->data;
-        result->data += static_cast<MT3String*>(mt3_to_string_impl(b))->data;
-        return result;
+        std::string result {};
+        result += static_cast<MT3String*>(mt3_to_string_impl(a))->data;
+        result += static_cast<MT3String*>(mt3_to_string_impl(b))->data;
+        return gc_malloc<MT3String>(std::move(result));
     }
     panic("unsupported types for builtin_plus");
 }
