@@ -34,7 +34,7 @@ class Linker(
     }
 
     fun link() {
-        if (mode != Mode.LTO) {
+        val linkerProcess = if (mode != Mode.LTO) {
             // Compile stdlib and main module in parallel
             val stdlibFuture = StdlibTranslationManager.ensureStdlibIsReady(cxxFlags)
             startProcessWithStdout(
@@ -54,7 +54,7 @@ class Linker(
                 mt3LibO.absolutePathString(),
                 mt3MainO.absolutePathString(),
                 "-o", output.absolutePathString()
-            ).waitFor()
+            )
         } else {
             startProcessWithStdout(
                 "clang++",
@@ -65,6 +65,9 @@ class Linker(
                 "-o", output.absolutePathString()
             )
         }
+        linkerProcess.waitFor()
+        if (linkerProcess.exitValue() != 0)
+            throw RuntimeException("linking failed")
     }
 
     fun emitStdlibLlvm() {

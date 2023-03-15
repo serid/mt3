@@ -61,7 +61,10 @@ object StdlibTranslationManager {
                 // Stash the command
                 Files.writeString(mt3LibPreviousCommand, serializedCommand)
                 p.waitFor()
-                isStdlibReady!!.complete(Unit)
+                if (p.exitValue() == 0)
+                    isStdlibReady!!.complete(Unit)
+                else
+                    isStdlibReady!!.completeExceptionally(RuntimeException("stdlib translation failed"))
             }
             return isStdlibReady!!
         }
