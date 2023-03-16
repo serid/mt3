@@ -362,6 +362,27 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
                 )
                 return LLVMExpression.SsaIndex(ssa)
             }
+
+            is Expr.Lambda -> {
+                // Desugar lambda body: if the last statement is an expression statement,
+                // replace it with a return stmt
+                Optional.ofNullable(expr.body.lastOrNull())
+                    .map {
+                        if (it is Stmt.ExprStmt)
+                            Stmt.Return(it.e)
+                        else
+                            it
+                    }
+                    .ifPresent {
+                        expr.body[expr.body.size - 1] = it
+                    }
+
+                val name = "\$lambda${owningProgram.allocateNativeGlobalsIndex()}"
+
+                FunctionLowering(owningProgram).processFun(name, expr.params, expr.body)
+
+                return emitLoadGlobalVariable(block, owningProgram.globalVars[name]!!)
+            }
         }
     }
 

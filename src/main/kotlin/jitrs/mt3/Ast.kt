@@ -63,6 +63,12 @@ fun exprFromSExpr(e: MT3SExpr): Expr = when {
             e.subexprs[2].cast<MT3Leaf>().token.getIdent()
         )
 
+        e.subexprs[0] is MT3Leaf && e.subexprs[0].cast<MT3Leaf>().token.id == identT &&
+                e.subexprs[0].cast<MT3Leaf>().token.getIdent() == "fun" -> Expr.Lambda(
+            e.subexprs[1].cast<MT3Node>().subexprs.map { it.cast<MT3Leaf>().token.getIdent() }.toTypedArray(),
+            e.subexprs.asSequence().drop(2).map(::stmtFromSExpr).priceyToArray()
+        )
+
         else -> Expr.Call(
             exprFromSExpr(e.subexprs[0]), e.subexprs.asSequence().drop(1).map(::exprFromSExpr).priceyToArray()
         )
@@ -111,6 +117,8 @@ sealed class Expr {
     }
 
     data class FieldAccess(val scrutinee: Expr, val fieldName: String) : Expr()
+
+    data class Lambda(val params: Array<String>, val body: Array<Stmt>) : Expr()
 }
 
 fun collectFunctionsVariables(
