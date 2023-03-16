@@ -91,7 +91,7 @@ class ProgramLowering(val moduleName: String) {
     private fun visitToplevel(toplevel: Toplevel) {
         when (toplevel) {
             is Toplevel.Fun -> {
-                FunctionLowering(this).visitFun(toplevel)
+                FunctionLowering(this).processFun(toplevel.name, toplevel.params, toplevel.body)
             }
         }
     }
@@ -107,8 +107,8 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
      */
     private val blocksToFinalizeWithReturn = ArrayList<Block>()
 
-    fun visitFun(func: Toplevel.Fun) {
-        val arity = func.params.size
+    fun processFun(name: String, params: Array<String>, body: Array<Stmt>) {
+        val arity = params.size
 
         // mt3lib.cxx expects the main function to be called mt3_main.
         // Also prefix a user-provided symbol with another "mt3_" if it already starts with one.
@@ -116,9 +116,9 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
         // the compiler can use "mt3_" namespace all to herself.
         // TODO: maybe it's easier to just disallow symbols starting with "mt3_"?
         //var funName =
-        //    if (func.name == "main" || func.name.startsWith("mt3_")) "mt3_${func.name}" else func.name
+        //    if (name == "main" || name.startsWith("mt3_")) "mt3_${name}" else name
 
-        val shortName = func.name
+        val shortName = name
         val longName = "mt3_${owningProgram.moduleName}_${mangle(shortName)}"
         val codeName = "${longName}-fun"
 
@@ -134,7 +134,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
         val entryBlock = cfc.newBlock()
 
         // Add parameters as local variables
-        func.params.forEachIndexed { index, name ->
+        params.forEachIndexed { index, name ->
             val ssa = cfc.allocateSsaVariable()
             if (localVariables.put(name, ssa) != null)
                 throw RuntimeException("error: parameter $name already exists")
@@ -145,7 +145,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
 
         // Add local variables as local variables
         // Declarations of local variables are hoisted to function header and are not lexical
-        val declarations = collectFunctionsVariables(func, HashSet(localVariables.keys))
+        val declarations = collectFunctionsVariables(body, HashSet(localVariables.keys))
         declarations.forEach { def ->
             val ssa = cfc.allocateSsaVariable()
             if (localVariables.put(def.name, ssa) != null)
@@ -161,7 +161,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
 
         var currentBlock: Block? = entryBlock
 
-        for (it in func.body) {
+        for (it in body) {
             currentBlock = visitStmt(currentBlock!!, it)
             if (currentBlock == null) break
         }
@@ -182,8 +182,8 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
 
         // Create a native global holding MT3Value* pointer to a function value
 
-        val valueId = if (func.name == "main") "mt3_main" else longName
-        val modifier = if (func.name == "main") "local_unnamed_addr" else "private unnamed_addr"
+        val valueId = if (name == "main") "mt3_main" else longName
+        val modifier = if (name == "main") "local_unnamed_addr" else "private unnamed_addr"
 
         val funPtrTypeList = countFrom(1).take(arity).map { "%MT3Value*" }.joinToString()
 
@@ -194,7 +194,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
             val res = block.func.allocateSsaVariable()
             block.body.append("    %$casted = bitcast %MT3Value* ($funPtrTypeList)* @$codeName to i8*\n")
             block.body
-                .append("    %$res = tail call %MT3Value* @mt3_new_function(i8 ${func.arity()}, i8* %$casted)\n")
+                .append("    %$res = tail call %MT3Value* @mt3_new_function(i8 ${arity}, i8* %$casted)\n")
             emitInitializeGlobalVariable(block, res, valueId)
         }
     }

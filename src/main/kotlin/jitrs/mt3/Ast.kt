@@ -80,9 +80,7 @@ data class Program(val toplevels: Array<Toplevel>)
 sealed class Toplevel {
     data class Fun(
         val name: String, val params: Array<String>, val body: Array<Stmt>
-    ) : Toplevel() {
-        fun arity(): Int = params.size
-    }
+    ) : Toplevel()
 }
 
 sealed class Stmt {
@@ -116,7 +114,7 @@ sealed class Expr {
 }
 
 fun collectFunctionsVariables(
-    func: Toplevel.Fun, preDeclaredVariables: HashSet<String>
+    body: Array<Stmt>, preDeclaredVariables: HashSet<String>
 ): Array<Stmt.VariableDefinition> {
     @Suppress("UnnecessaryVariable") val variableNames = preDeclaredVariables
     val result = ArrayList<Stmt.VariableDefinition>()
@@ -151,6 +149,6 @@ fun collectFunctionsVariables(
         }
     }
 
-    func.body.forEach { visit(it) }
+    body.forEach { visit(it) }
     return result.toTypedArray()
 }
