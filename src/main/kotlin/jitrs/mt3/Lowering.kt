@@ -401,8 +401,8 @@ private fun emitInitializeGlobalVariable(block: Block, what: Int, globalId: Stri
 private fun emitRegisterGcRoot(block: Block, ssa: Int) {
     val casted = block.func.allocateSsaVariable()
     block.body.append(
-        """|    %$casted = bitcast %MT3Value* %$ssa to %GCObject*
-           |    tail call void @mt3_add_gc_root(%GCObject* %$casted)""".trimMargin()
+        """|    %$casted = bitcast %MT3Value* %$ssa to %Traceable*
+           |    tail call void @mt3_add_gc_root(%Traceable* %$casted)""".trimMargin()
     )
 }
 

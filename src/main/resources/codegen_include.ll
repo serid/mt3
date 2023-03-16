@@ -3,10 +3,10 @@
 
 target triple = "x86_64-unknown-linux-gnu"
 
-%GCObject = type opaque
+%Traceable = type opaque
 %MT3Value = type opaque
 
-declare void @mt3_add_gc_root(%GCObject*)
+declare void @mt3_add_gc_root(%Traceable*)
 
 declare %MT3Value* @mt3_new_bool(i1)
 declare %MT3Value* @mt3_new_int(i64)
