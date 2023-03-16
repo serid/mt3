@@ -7,7 +7,7 @@ import jitrs.util.PeekableIterator
 fun <K : IToken> parse(tokens: PeekableIterator<K>): SExpr<K> {
     val t = tokens.next()
     return if (t.isLParen())
-        SExpr.Node(parseSExprs(tokens))
+        SExpr.Node(parseSExprs(tokens, false))
     else
         SExpr.Leaf(t)
 }
@@ -15,11 +15,14 @@ fun <K : IToken> parse(tokens: PeekableIterator<K>): SExpr<K> {
 /**
  * Parse exprs until EOF or rparen
  */
-fun <K : IToken> parseSExprs(tokens: PeekableIterator<K>): Array<SExpr<K>> {
+fun <K : IToken> parseSExprs(tokens: PeekableIterator<K>, isParsingToplevel: Boolean): Array<SExpr<K>> {
     val subexprs = ArrayList<SExpr<K>>()
     while (true) {
         if (!tokens.hasNext())
-            return subexprs.toTypedArray()
+            if (isParsingToplevel)
+                return subexprs.toTypedArray()
+            else
+                throw RuntimeException("expected \")\", found EOF")
         else if (tokens.peek().isRParen()) {
             tokens.next() // Skip peeked RParen
             return subexprs.toTypedArray()

@@ -20,7 +20,7 @@ fun functionalityTest(testName: String, src: String, expectedStdout: String) {
  */
 private fun execMt3(filenames: String, src: String): String {
     val tokens = tokenize(src).asSequence().priceyToArray()
-    val sexprs = parseSExprs(PeekableIterator(tokens.iterator()))
+    val sexprs = parseSExprs(PeekableIterator(tokens.iterator()), true)
     val program = programFromSExprs(sexprs)
     val lir = ProgramLowering("lemod").toLlvm(program)
 
