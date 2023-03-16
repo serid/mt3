@@ -41,17 +41,19 @@ namespace {
         return static_cast<type_name*>(value); \
     }
 
-static const u8 NONE_TAG = 1;
-static const u8 BOOL_TAG = 2;
-static const u8 INT_TAG = 3;
-static const u8 ARRAY_TAG = 4;
-static const u8 STRING_TAG = 5;
-static const u8 FUNCTION_TAG = 6;
-static const u8 OBJECT_TAG = 7;
+enum MT3ValueTag : u8 {
+    NONE_TAG = 1,
+    BOOL_TAG,
+    INT_TAG,
+    ARRAY_TAG,
+    STRING_TAG,
+    FUNCTION_TAG,
+    OBJECT_TAG,
+};
 struct MT3Value : public GCObject {
-    const u8 tag;
+    const MT3ValueTag tag;
 
-    MT3Value(u8 tag) : tag(tag) {}
+    MT3Value(MT3ValueTag tag) : tag(tag) {}
 };
 struct MT3None : public MT3Value {
     MT3None() : MT3Value(NONE_TAG) {}
@@ -125,26 +127,12 @@ struct MT3Function : public MT3Value {
     // It would require monomorphing call1, call2, call3 in LLVM IR
     void* fun;
 
-    // TODO: toplevel MT3 functions and native functions don't need closures,
-    // maybe this class should be split in two
-    std::vector<MT3Value*> closure;
-
     // Formal number of parameters expected by "fun". Should match actual number of arguments in "args"
     // when funptr is called
     const u8 parameter_num;
 
-    MT3Function(u8 parameter_num, void* fun, std::vector<MT3Value*>&& closure) :
-        MT3Value(FUNCTION_TAG), parameter_num(parameter_num), fun(fun), closure(std::move(closure)) {}
-
     MT3Function(u8 parameter_num, void* fun) :
-        MT3Function(parameter_num, fun, {}) {}
-
-    void visit() override {
-        if (is_marked()) return;
-        set_mark();
-        for (const auto& x : closure)
-            x->visit();
-    }
+        MT3Value(FUNCTION_TAG), parameter_num(parameter_num), fun(fun) {}
 
     DOWNCAST_TEMPLATE(MT3Function, FUNCTION_TAG, "'function' is not a function")
 };
