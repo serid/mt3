@@ -11,15 +11,19 @@ fun main() {
     println("Hello World!")
 
     val src = """
-        |(fun println (s)
+        |(fun print-ln (s)
         |    (print s)
         |    (print "\n")
         |)
         |
         |(fun main ()
-        |    (let f (fun (x) (+ x 1)))
-        |    (println (f 7))
-        |    (println (f 8))
+        |    (let my-prototype (new))
+        |    (.= my-prototype increment (fun (self) (+ self 1)))
+        |    
+        |    (let obj 10)
+        |    (: set-prototype obj my-prototype)
+        |    (print-ln (: increment obj))
+        |    (print-ln (: to-string obj))
         |)
     """.trimMargin()
     val tokens = tokenize(src).asSequence().priceyToArray()

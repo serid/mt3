@@ -20,3 +20,6 @@ declare i1 @mt3_is_true(%MT3Value*)
 ; parameters are: object, string with field name, new field value
 declare void @mt3_set_field(%MT3Value*, %MT3Value*, %MT3Value*)
 declare %MT3Value* @mt3_get_field(%MT3Value*, %MT3Value*)
+
+; parameters: string with method name, object
+declare i8* @mt3_get_method_funptr(%MT3Value*, %MT3Value*, i8)

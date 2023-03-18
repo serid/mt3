@@ -326,15 +326,17 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
             }
 
             is Expr.Call -> {
-                owningProgram.callSequencesToGenerate.add(expr.arity())
+                val arity = expr.args.size
+                owningProgram.callSequencesToGenerate.add(arity)
 
-                val functionIndex = visitExpr(block, expr.func).toCode()
-                val args = (sequenceOf("%MT3Value* $functionIndex") + expr.args.asSequence().map {
-                    "%MT3Value* ${visitExpr(block, it).toCode()}"
-                }).joinToString()
+                val functionSsa = visitExpr(block, expr.func).toCode()
+                val args = sequenceOf("%MT3Value* $functionSsa")
+                    .plus(expr.args.asSequence().map {
+                        "%MT3Value* ${visitExpr(block, it).toCode()}"
+                    }).joinToString()
                 val ssa = block.func.allocateSsaVariable()
 
-                block.body.append("    %$ssa = tail call %MT3Value* @mt3_builtin_call${expr.arity()}($args)\n")
+                block.body.append("    %$ssa = tail call %MT3Value* @mt3_builtin_call$arity($args)\n")
                 return LLVMExpression.SsaIndex(ssa)
             }
 
@@ -350,6 +352,24 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
                         return emitLoadGlobalVariable(block, it)
                 }
                 throw RuntimeException("variable not found: $name")
+            }
+
+            is Expr.MethodCall -> {
+                // Does not include the receiver argument
+                val arity = expr.args.size
+                owningProgram.callSequencesToGenerate.add(arity)
+
+                val receiverSsa = visitExpr(block, expr.receiver).toCode()
+                val methodNameSsa = emitStringConst(block, expr.name).toCode()
+
+                val args = sequenceOf("%MT3Value* $methodNameSsa", "%MT3Value* $receiverSsa")
+                    .plus(expr.args.asSequence().map {
+                        "%MT3Value* ${visitExpr(block, it).toCode()}"
+                    }).joinToString()
+                val ssa = block.func.allocateSsaVariable()
+
+                block.body.append("    %$ssa = tail call %MT3Value* @mt3_builtin_call_method$arity($args)\n")
+                return LLVMExpression.SsaIndex(ssa)
             }
 
             is Expr.FieldAccess -> {
@@ -474,16 +494,41 @@ private fun mangle(name: String): String {
 //
 // Example
 private fun reifyCallSequence(output: StringBuilder, arity: Int) {
-    val parameterList = (sequenceOf("%MT3Value* noundef readonly %0") +
-            countFrom(1).take(arity).map { "%MT3Value* noundef readonly %$it" }).joinToString()
+    val parameterList = countFrom(1).take(arity).map { "%MT3Value* noundef readonly %$it" }.toList()
     val funPtrParameterList = countFrom(1).take(arity).map { "%MT3Value*" }.joinToString()
     val funPtrArgumentList = countFrom(1).take(arity).map { "%MT3Value* noundef %$it" }.joinToString()
 
-    output.append("define noundef %MT3Value* @mt3_builtin_call$arity($parameterList) local_unnamed_addr {\n")
+    // Generate a checked call sequence
+    val checkedParameterList =
+        sequenceOf("%MT3Value* noundef readonly %0").plus(parameterList.asSequence()).joinToString()
+    output.append("define noundef %MT3Value* @mt3_builtin_call$arity($checkedParameterList) local_unnamed_addr {\n")
     output.append("    %${arity + 2} = tail call i8* @mt3_check_function_call(%MT3Value* noundef %0, i8 noundef zeroext $arity)\n")
     output.append("    %${arity + 3} = bitcast i8* %${arity + 2} to %MT3Value* ($funPtrParameterList)*\n")
     output.append("    %${arity + 4} = tail call noundef %MT3Value* %${arity + 3}($funPtrArgumentList)\n")
     output.append("    ret %MT3Value* %${arity + 4}\n")
+    output.append("}\n")
+
+    // Generate an unsafe funptr call
+    val unsafeParameterList = sequenceOf("i8* noundef readonly %0").plus(parameterList.asSequence()).joinToString()
+    output.append("define noundef %MT3Value* @mt3_builtin_call_unsafe$arity($unsafeParameterList) local_unnamed_addr {\n")
+    output.append("    %${arity + 2} = bitcast i8* %0 to %MT3Value* ($funPtrParameterList)*\n")
+    output.append("    %${arity + 3} = tail call noundef %MT3Value* %${arity + 2}($funPtrArgumentList)\n")
+    output.append("    ret %MT3Value* %${arity + 3}\n")
+    output.append("}\n")
+
+    // Generate a method call sequence
+    // [arity] does not include the receiver argument
+    val arityWithReceiver = arity + 1
+    val arityWithReceiverAndMethodName = arity + 2
+    val methodParameterList =
+        countFrom(0).take(arityWithReceiverAndMethodName).map { "%MT3Value* noundef readonly %$it" }.joinToString()
+    val methodFunPtrParameterList = countFrom(1).take(arityWithReceiver).map { "%MT3Value*" }.joinToString()
+    val methodFunPtrArgumentList = countFrom(1).take(arityWithReceiver).map { "%MT3Value* noundef %$it" }.joinToString()
+    output.append("define noundef %MT3Value* @mt3_builtin_call_method$arity($methodParameterList) local_unnamed_addr {\n")
+    output.append("    %${arityWithReceiver + 2} = tail call i8* @mt3_get_method_funptr(%MT3Value* noundef %0, %MT3Value* noundef %1, i8 noundef zeroext $arityWithReceiver)\n")
+    output.append("    %${arityWithReceiver + 3} = bitcast i8* %${arityWithReceiver + 2} to %MT3Value* ($methodFunPtrParameterList)*\n")
+    output.append("    %${arityWithReceiver + 4} = tail call noundef %MT3Value* %${arityWithReceiver + 3}($methodFunPtrArgumentList)\n")
+    output.append("    ret %MT3Value* %${arityWithReceiver + 4}\n")
     output.append("}\n")
 }
 

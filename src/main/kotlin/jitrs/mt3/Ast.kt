@@ -64,6 +64,13 @@ fun exprFromSExpr(e: MT3SExpr): Expr = when {
         )
 
         e.subexprs[0] is MT3Leaf && e.subexprs[0].cast<MT3Leaf>().token.id == identT &&
+                e.subexprs[0].cast<MT3Leaf>().token.getIdent() == ":" -> Expr.MethodCall(
+            e.subexprs[1].cast<MT3Leaf>().token.getIdent(),
+            exprFromSExpr(e.subexprs[2]),
+            e.subexprs.asSequence().drop(3).map(::exprFromSExpr).priceyToArray()
+        )
+
+        e.subexprs[0] is MT3Leaf && e.subexprs[0].cast<MT3Leaf>().token.id == identT &&
                 e.subexprs[0].cast<MT3Leaf>().token.getIdent() == "fun" -> Expr.Lambda(
             e.subexprs[1].cast<MT3Node>().subexprs.map { it.cast<MT3Leaf>().token.getIdent() }.toTypedArray(),
             e.subexprs.asSequence().drop(2).map(::stmtFromSExpr).priceyToArray()
@@ -112,9 +119,10 @@ sealed class Expr {
 
     data class VariableUse(val name: String) : Expr()
 
-    data class Call(val func: Expr, val args: Array<Expr>) : Expr() {
-        fun arity(): Int = args.size
-    }
+    data class Call(val func: Expr, val args: Array<Expr>) : Expr()
+
+    // [args] do not include the [receiver].
+    data class MethodCall(val name: String, val receiver: Expr, val args: Array<Expr>) : Expr()
 
     data class FieldAccess(val scrutinee: Expr, val fieldName: String) : Expr()
 

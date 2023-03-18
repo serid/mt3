@@ -28,6 +28,11 @@ static_assert(!(MT3_OBJECTS_IC && MT3_OBJECTS_LAYOUT != MT3_OBJECTS_HIDDENCLASS)
 
 //// MT3VALUE
 
+struct MT3Value;
+namespace {
+    extern MT3Value* object_prototype;
+}
+
 #if MT3_OBJECTS_LAYOUT == MT3_OBJECTS_HIDDENCLASS
 struct HiddenClass;
 namespace {
@@ -52,6 +57,13 @@ enum MT3ValueTag : u8 {
 };
 struct MT3Value : public GCObject {
     const MT3ValueTag tag;
+    MT3Value* proto = object_prototype;
+
+    void visit() override {
+        if (is_marked()) return;
+        set_mark();
+        proto->visit();
+    }
 
     MT3Value(MT3ValueTag tag) : tag(tag) {}
 };
@@ -81,7 +93,7 @@ struct MT3Array : public MT3Value {
 
     void visit() override {
         if (is_marked()) return;
-        set_mark();
+        MT3Value::visit();
         for (const auto& x : values)
             x->visit();
     }
@@ -148,7 +160,7 @@ struct MT3Object : public MT3Value {
 
     void visit() override {
         if (is_marked()) return;
-        set_mark();
+        MT3Value::visit();
 #if MT3_OBJECTS_LAYOUT == MT3_OBJECTS_DICTIONARY
         for (const auto& [key, value] : fields) {
             key->visit();
@@ -201,6 +213,16 @@ namespace {
 
 //// RUNTIME LIBRARY
 
+// Provide a definition for a forward declaration at file start
+namespace {
+    // The root of all prototype chains. Contains methods available on all objects.
+    MT3Value* object_prototype = [] {
+        auto result = gc_malloc<MT3Object>();
+        result->proto = result;
+        return result;
+    }();
+}
+
 extern "C" MT3Value* mt3_stdlib_none = gc_malloc<MT3None>();
 extern "C" MT3Value* mt3_stdlib_false = gc_malloc<MT3Bool>();
 extern "C" MT3Value* mt3_stdlib_true = gc_malloc<MT3Bool>();
@@ -213,7 +235,7 @@ extern "C" MT3Value* mt3_new_int(i64 x) {
     return gc_malloc<MT3Int>(x);
 }
 
-extern "C" MT3Value* mt3_new_string(char* s) {
+extern "C" MT3Value* mt3_new_string(const char* s) {
     return gc_malloc<MT3String>(s);
 }
 
@@ -221,26 +243,40 @@ extern "C" MT3Value* mt3_new_function(u8 parameter_num, void* fun) {
     return gc_malloc<MT3Function>(parameter_num, fun);
 }
 
-extern "C" void mt3_set_field(MT3Value* scrutinee, MT3Value* field_name, MT3Value* rhs) {
+// Returns a reference into the unordered_map.
+// If go_to_prototype is true, failing to find a member in [scrutinee] will
+// cause a look up the prototype chain.
+template<bool go_to_prototype>
+static MT3Value*& mt3_lookup_member(MT3Value* scrutinee, MT3Value* field_name) {
     auto scrutinee1 = MT3Object::downcast_from(scrutinee);
     auto field_name1 = MT3String::downcast_from(field_name);
 
+    auto& result = scrutinee1->fields[field_name1];
+
+    if constexpr (go_to_prototype) {
+        // If lookup failed and scrutinee is the prototype chain root, look up the chain
+        if (result == nullptr && scrutinee1 != object_prototype)
+            return mt3_lookup_member<true>(scrutinee1->proto, field_name);
+    }
+
+    return result;
+}
+
+extern "C" void mt3_set_field(MT3Value* scrutinee, MT3Value* field_name, MT3Value* rhs) {
+    auto& field = mt3_lookup_member<false>(scrutinee, field_name);
+
 #if MT3_OBJECTS_LAYOUT == MT3_OBJECTS_DICTIONARY
-    scrutinee1->fields.insert_or_assign(field_name1, rhs);
+    field = rhs;
 #endif
 }
 
 extern "C" MT3Value* mt3_get_field(MT3Value* scrutinee, MT3Value* field_name) {
-    auto scrutinee1 = MT3Object::downcast_from(scrutinee);
-    auto field_name1 = MT3String::downcast_from(field_name);
+    auto& field = mt3_lookup_member<false>(scrutinee, field_name);
 
 #if MT3_OBJECTS_LAYOUT == MT3_OBJECTS_DICTIONARY
-    MT3Value* result = scrutinee1->fields[field_name1];
-
     // operator[] inserts a default nullptr and returns it if key is not present
-    my_assert(result != nullptr, "field not present");
-
-    return result;
+    my_assert(field != nullptr, "field not present");
+    return field;
 #endif
 }
 
@@ -249,6 +285,15 @@ extern "C" void* mt3_check_function_call(MT3Value* function, u8 arg_num) {
     auto casted_function = MT3Function::downcast_from(function);
     my_assert(casted_function->parameter_num == arg_num, "wrong number of arguments");
     return reinterpret_cast<void*>(casted_function->fun);
+}
+
+// Methods are looked up starting with the prototype and use a different IC
+extern "C" void* mt3_get_method_funptr(MT3Value* method_name, MT3Value* receiver, u8 arg_num) {
+    auto method = mt3_lookup_member<true>(receiver->proto, method_name);
+
+    my_assert(method != nullptr, "method not found");
+
+    return mt3_check_function_call(method, arg_num);
 }
 
 extern "C" bool mt3_is_false(MT3Value* value) {
@@ -379,22 +424,39 @@ static MT3Value* mt3_new_impl() {
     return gc_malloc<MT3Object>();
 }
 
+static MT3Value* mt3_get_prototype_impl(MT3Value* a) {
+    return a->proto;
+}
+
+static MT3Value* mt3_set_prototype_impl(MT3Value* a, MT3Value* proto) {
+    a->proto = proto;
+    return mt3_stdlib_none;
+}
+
+static MT3Value* mt3_reference_equals_impl(MT3Value* a, MT3Value* b) {
+    return mt3_new_bool(a == b);
+}
+
 // Here follow native global variables with MT3Value-wrappers around stdlib functions
-#define DECLARE_STDLIB_GLOBAL(name, arity) \
-extern "C" MT3Value* mt3_stdlib_##name = gc_malloc<MT3Function>(arity, reinterpret_cast<void*>(mt3_##name##_impl));
-DECLARE_STDLIB_GLOBAL(logical_not, 1)
-DECLARE_STDLIB_GLOBAL(print, 1)
-DECLARE_STDLIB_GLOBAL(equality, 2)
-DECLARE_STDLIB_GLOBAL(inequality, 2)
-DECLARE_STDLIB_GLOBAL(plus, 2)
-DECLARE_STDLIB_GLOBAL(minus, 2)
-DECLARE_STDLIB_GLOBAL(mul, 2)
-DECLARE_STDLIB_GLOBAL(div, 2)
-DECLARE_STDLIB_GLOBAL(less, 2)
-DECLARE_STDLIB_GLOBAL(lax_less, 2)
-DECLARE_STDLIB_GLOBAL(greater, 2)
-DECLARE_STDLIB_GLOBAL(lax_greater, 2)
-DECLARE_STDLIB_GLOBAL(new, 0)
+#define DECLARE_STDLIB_GLOBAL(visibility, name, arity) \
+visibility MT3Value* mt3_stdlib_##name = gc_malloc<MT3Function>(arity, reinterpret_cast<void*>(mt3_##name##_impl));
+DECLARE_STDLIB_GLOBAL(extern "C", print, 1)
+DECLARE_STDLIB_GLOBAL(static, to_string, 1)
+DECLARE_STDLIB_GLOBAL(static, get_prototype, 1)
+DECLARE_STDLIB_GLOBAL(static, set_prototype, 2)
+DECLARE_STDLIB_GLOBAL(static, reference_equals, 2)
+DECLARE_STDLIB_GLOBAL(extern "C", logical_not, 1)
+DECLARE_STDLIB_GLOBAL(extern "C", equality, 2)
+DECLARE_STDLIB_GLOBAL(extern "C", inequality, 2)
+DECLARE_STDLIB_GLOBAL(extern "C", plus, 2)
+DECLARE_STDLIB_GLOBAL(extern "C", minus, 2)
+DECLARE_STDLIB_GLOBAL(extern "C", mul, 2)
+DECLARE_STDLIB_GLOBAL(extern "C", div, 2)
+DECLARE_STDLIB_GLOBAL(extern "C", less, 2)
+DECLARE_STDLIB_GLOBAL(extern "C", lax_less, 2)
+DECLARE_STDLIB_GLOBAL(extern "C", greater, 2)
+DECLARE_STDLIB_GLOBAL(extern "C", lax_greater, 2)
+DECLARE_STDLIB_GLOBAL(extern "C", new, 0)
 #undef DECLARE_STDLIB_GLOBAL
 
 // extern "C" MT3Value* mt3_mt3lib_gc_roots[] = {mt3_print, mt3_plus};
@@ -404,10 +466,13 @@ static void add_gc_roots() {
 #if MT3_OBJECTS_LAYOUT == MT3_OBJECTS_HIDDENCLASS
     mt3_add_gc_root(hiddenclasses_root);
 #endif
+    mt3_add_gc_root(object_prototype);
 
     // Builtins
-    mt3_add_gc_root(mt3_stdlib_logical_not);
     mt3_add_gc_root(mt3_stdlib_print);
+    mt3_add_gc_root(mt3_stdlib_to_string);
+    mt3_add_gc_root(mt3_stdlib_set_prototype);
+    mt3_add_gc_root(mt3_stdlib_logical_not);
     mt3_add_gc_root(mt3_stdlib_equality);
     mt3_add_gc_root(mt3_stdlib_inequality);
     mt3_add_gc_root(mt3_stdlib_plus);
@@ -423,6 +488,11 @@ static void add_gc_roots() {
 
 static void mt3_stdlib_init() {
     add_gc_roots();
+
+    mt3_set_field(object_prototype, mt3_new_string("to-string"), mt3_stdlib_to_string);
+    mt3_set_field(object_prototype, mt3_new_string("get-prototype"), mt3_stdlib_get_prototype);
+    mt3_set_field(object_prototype, mt3_new_string("set-prototype"), mt3_stdlib_set_prototype);
+    mt3_set_field(object_prototype, mt3_new_string("reference-equals"), mt3_stdlib_reference_equals);
 }
 
 // Guest main function generated by the mt3 compiler using LLVM

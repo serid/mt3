@@ -2,7 +2,7 @@ import jitrs.util.priceyToArray
 import kotlin.concurrent.thread
 
 fun main() {
-    val tests = sequenceOf(::test1, ::test2, ::objectTest)
+    val tests = sequenceOf(::test1, ::test2, ::objectTest, ::methodTest)
     val errors = ArrayList<Throwable>()
 
     // Spawn a thread for each test and only after that join them
@@ -72,5 +72,31 @@ private fun objectTest() {
         |    (print (. pair1 y))
         |)""".trimMargin(),
         "1020"
+    )
+}
+
+private fun methodTest() {
+    functionalityTest(
+        "methods",
+        """
+        |(fun print-ln (s)
+        |    (print s)
+        |    (print "\n")
+        |)
+        |
+        |(fun main ()
+        |    (let my-prototype (new))
+        |    (.= my-prototype increment (fun (self) (+ self 1)))
+        |    
+        |    (let obj 10)
+        |    (: set-prototype obj my-prototype)
+        |    (print-ln (: increment obj))
+        |    (print-ln (: to-string obj))
+        |    
+        |    (let proto1 (: get-prototype "Doge"))
+        |    (let proto2 (: get-prototype (: get-prototype (: get-prototype (: get-prototype my-prototype)))))
+        |    (print-ln (: reference-equals proto1 proto2))
+        |)""".trimMargin(),
+        "11\n10\ntrue\n"
     )
 }
