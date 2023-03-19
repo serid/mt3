@@ -413,7 +413,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
     }
 
     private fun emitStringConst(block: Block, string: String): LLVMExpression {
-        val lenWithNull = (string.length + 1).toString()
+        val lenWithNull = (string.toByteArray().size + 1).toString()
         val id = owningProgram.allocateNativeGlobalsIndex()
         val bytesId = "mt3_str$id"
         val valueId = "mt3_strV$id"
