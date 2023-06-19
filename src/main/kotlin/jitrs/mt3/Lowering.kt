@@ -50,7 +50,9 @@ class ProgramLowering(val moduleName: String) {
      */
     val callSequencesToGenerate = TreeSet(arrayListOf(0))
 
-    val moduleInitializer = ArrayList<(block: Block) -> Unit>()
+    val nativeModuleInitializer = ArrayList<(block: Block) -> Unit>()
+
+    val constsInitializers = ArrayList<Expr>()
 
     fun toLlvm(program: Program): String {
         visitProgram(program)
@@ -79,17 +81,34 @@ class ProgramLowering(val moduleName: String) {
         // Emit module initializer
         val initializer = Function("void", "mt3_mainmod_init", "", 0)
         val bloc = initializer.newBlock()
-        moduleInitializer.forEach {
+        nativeModuleInitializer.forEach {
             it(bloc)
         }
         bloc.finalizeWithReturn("void")
         initializer.blit(codegen.bodyCode)
+
+
+        val constsInitializerFunc = FunctionLowering(this)
+        constsInitializerFunc.processFun(
+            "${moduleName}_init", arrayOf(),
+            constsInitializers.map { Stmt.ExprStmt(it) }.toTypedArray()
+        )
+
+        constsInitializers.forEach {
+            constsInitializerFunc.visitExpr(bloc2, it)
+        }
 
         callSequencesToGenerate.forEach { i -> reifyCallSequence(codegen.headerCode, i) }
     }
 
     private fun visitToplevel(toplevel: Toplevel) {
         when (toplevel) {
+            is Toplevel.Const -> {
+                nativeModuleInitializer.add {
+
+                }
+            }
+
             is Toplevel.Fun -> {
                 FunctionLowering(this).processFun(toplevel.name, toplevel.params, toplevel.body)
             }
@@ -189,7 +208,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
 
         owningProgram.codegen.headerCode.append("@$valueId = $modifier global %MT3Value* null, align 8\n")
 
-        owningProgram.moduleInitializer.add { block ->
+        owningProgram.nativeModuleInitializer.add { block ->
             val casted = block.func.allocateSsaVariable()
             val res = block.func.allocateSsaVariable()
             block.body.append("    %$casted = bitcast %MT3Value* ($funPtrTypeList)* @$codeName to i8*\n")
@@ -304,7 +323,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
     /**
      * @return LLVM expression where result of this MT3 expression is stored
      */
-    private fun visitExpr(block: Block, expr: Expr): LLVMExpression {
+    fun visitExpr(block: Block, expr: Expr): LLVMExpression {
         when (expr) {
             is Expr.IntConst -> {
                 val valueId = "mt3_intV${owningProgram.allocateNativeGlobalsIndex()}"
@@ -312,7 +331,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
                 // Create a native global holding MT3Value* pointer to a string value
                 owningProgram.codegen.headerCode.append("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
 
-                owningProgram.moduleInitializer.add { block2 ->
+                owningProgram.nativeModuleInitializer.add { block2 ->
                     val res = block2.func.allocateSsaVariable()
                     block2.body.append("    %$res = tail call %MT3Value* @mt3_new_int(i64 ${expr.int})\n")
                     emitInitializeGlobalVariable(block2, res, valueId)
@@ -424,7 +443,7 @@ class FunctionLowering(private val owningProgram: ProgramLowering) {
         // Create a native global holding MT3Value* pointer to a string value
         owningProgram.codegen.headerCode.append("@$valueId = private unnamed_addr global %MT3Value* null, align 8\n")
 
-        owningProgram.moduleInitializer.add { block2 ->
+        owningProgram.nativeModuleInitializer.add { block2 ->
             val res = block2.func.allocateSsaVariable()
             block2.body.append("    %$res = tail call %MT3Value* @mt3_new_string(i8* getelementptr inbounds ([$lenWithNull x i8], [$lenWithNull x i8]* @$bytesId, i64 0, i64 0))\n")
             emitInitializeGlobalVariable(block2, res, valueId)

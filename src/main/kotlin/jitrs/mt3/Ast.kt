@@ -10,6 +10,11 @@ fun programFromSExprs(es: Array<MT3SExpr>): Program = Program(es.map(::toplevelF
 fun toplevelFromSExpr(e: MT3SExpr): Toplevel {
     e as SExpr.Node
     return when (e.subexprs[0].cast<MT3Leaf>().token.getIdent()) {
+        "const" -> Toplevel.Const(
+            e.subexprs[1].cast<MT3Leaf>().token.getIdent(),
+            exprFromSExpr(e.subexprs[2])
+        )
+
         "fun" -> Toplevel.Fun(
             e.subexprs[1].cast<MT3Leaf>().token.getIdent(),
             e.subexprs[2].cast<MT3Node>().subexprs.map { it.cast<MT3Leaf>().token.getIdent() }.toTypedArray(),
@@ -91,6 +96,10 @@ typealias MT3Leaf = SExpr.Leaf<Token>
 data class Program(val toplevels: Array<Toplevel>)
 
 sealed class Toplevel {
+    data class Const(
+        val name: String, val initializer: Expr
+    ) : Toplevel()
+
     data class Fun(
         val name: String, val params: Array<String>, val body: Array<Stmt>
     ) : Toplevel()
